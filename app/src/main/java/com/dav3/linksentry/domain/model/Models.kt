@@ -64,3 +64,43 @@ data class Analysis(
     val facts: UrlFacts,
     val verdict: Verdict,
 )
+
+/** An installed app that can open a given URL. */
+data class HandlerApp(
+    val packageName: String,
+    val activityName: String,
+    val label: String,
+    /** True if this app is a general web browser (wildcard-host handler). */
+    val isBrowser: Boolean,
+)
+
+/** What the user did with an inspected link (history record). */
+enum class HistoryAction {
+    OPENED_WITH,
+    COPIED,
+    COPIED_CLEANED,
+    SHARED,
+    INSPECTED,
+}
+
+data class LinkRecord(
+    val id: Long = 0,
+    val url: String,
+    val host: String,
+    val worstSeverity: Severity?,
+    val action: HistoryAction,
+    val timestamp: Long,
+)
+
+enum class ThemeMode {
+    SYSTEM,
+    LIGHT,
+    DARK,
+}
+
+data class AppSettings(
+    val recordHistory: Boolean = true,
+    /** null = keep forever */
+    val retentionDays: Int? = 30,
+    val theme: ThemeMode = ThemeMode.SYSTEM,
+)
