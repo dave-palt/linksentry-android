@@ -1,49 +1,65 @@
 package com.dav3.linksentry
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import com.dav3.linksentry.data.local.SettingsRepositoryImpl
+import com.dav3.linksentry.domain.model.ThemeMode
+import com.dav3.linksentry.ui.nav.LinkSentryNavHost
 import com.dav3.linksentry.ui.theme.LinkSentryTheme
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.flow.MutableStateFlow
+import javax.inject.Inject
 
 /**
  * Single-activity app. Receives ACTION_VIEW http/https intents (as the
- * default browser) and, in launcher mode, offers manual URL inspection.
- * The Inspect UI replaces this placeholder as the project grows.
+ * default browser) and shows the Inspect screen; launcher entry opens the
+ * manual-inspect tab.
  */
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
+
+    /** URL handed in by a VIEW intent; consumed once by the NavHost. */
+    private val pendingUrl = MutableStateFlow<String?>(null)
+
+    @Inject
+    lateinit var settingsRepository: SettingsRepositoryImpl
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        pendingUrl.value = intentUrl(intent)
+
         setContent {
-            LinkSentryTheme {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background,
-                ) {
-                    Column(
-                        modifier = Modifier.padding(24.dp),
-                        verticalArrangement = Arrangement.spacedBy(16.dp),
-                    ) {
-                        Text("LinkSentry", style = MaterialTheme.typography.headlineMedium)
-                        Text(
-                            text = intent?.dataString ?: "(opened manually)",
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                    }
-                }
+            val themeMode by settingsRepository.settings
+                .collectAsState(initial = com.dav3.linksentry.domain.model.AppSettings())
+                .let { androidx.compose.runtime.derivedStateOf { it.value.theme } }
+
+            LinkSentryTheme(
+                darkTheme = when (themeMode) {
+                    ThemeMode.DARK -> true
+                    ThemeMode.LIGHT -> false
+                    ThemeMode.SYSTEM -> androidx.compose.foundation.isSystemInDarkTheme()
+                },
+            ) {
+                val url by pendingUrl.collectAsState()
+                LinkSentryNavHost(
+                    initialUrl = url,
+                    onUrlInspected = { pendingUrl.value = null },
+                )
             }
         }
     }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        // singleTop: a second link tap while we're open arrives here.
+        pendingUrl.value = intentUrl(intent)
+    }
+
+    private fun intentUrl(intent: Intent?): String? = intent?.takeIf { it.action == android.content.Intent.ACTION_VIEW }?.dataString
 }

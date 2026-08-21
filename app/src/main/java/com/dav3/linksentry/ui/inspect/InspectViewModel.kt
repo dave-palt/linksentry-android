@@ -123,6 +123,31 @@ class InspectViewModel @Inject constructor(
     }
 
     fun reset() {
-        _uiState.value = InspectUiState.Manual()
+        _uiState.value = InspectUiState.Manual(isDefaultBrowser = roleChecker.isDefaultBrowser())
+    }
+
+    /** Track manual-mode text input. */
+    fun onInputChange(input: String) {
+        val current = _uiState.value
+        _uiState.value = when (current) {
+            is InspectUiState.Manual -> current.copy(input = input)
+            else -> InspectUiState.Manual(
+                input = input,
+                isDefaultBrowser = roleChecker.isDefaultBrowser(),
+            )
+        }
+    }
+
+    /** Re-check default-browser role (called on resume). */
+    fun refreshRole() {
+        val current = _uiState.value
+        if (current is InspectUiState.Manual) {
+            _uiState.value = current.copy(isDefaultBrowser = roleChecker.isDefaultBrowser())
+        }
+    }
+
+    /** Open the system Default apps settings screen. */
+    fun openBrowserSettings() {
+        actions.openDefaultAppsSettings()
     }
 }
