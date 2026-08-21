@@ -1,0 +1,26 @@
+*.iml
+.gradle
+/local.properties
+/.idea
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.env
+*.apk
+*.aab
+*.ap_
+*.dex
+# Kotlin
+/.kotlin
+# Build outputs
+/app/build
+/app/release.jks
+# Exception: the shared debug keystore is committed so local and CI dev
+# builds produce interchangeable (same-signature) APKs.
+!app/debug.keystore
+release.jks
+.worktrees
+# Hermes plans are workspace-local
+/.hermes
