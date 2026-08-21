@@ -27,4 +27,12 @@ abstract class AppModule {
     @Binds
     @Singleton
     abstract fun bindBrowserRoleChecker(impl: DefaultBrowserRoleChecker): BrowserRoleChecker
+
+    @Binds
+    @Singleton
+    abstract fun bindHistoryRepository(impl: com.dav3.linksentry.data.local.HistoryRepositoryImpl): com.dav3.linksentry.domain.repository.HistoryRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindSettingsRepository(impl: com.dav3.linksentry.data.local.SettingsRepositoryImpl): com.dav3.linksentry.domain.repository.SettingsRepository
 }
