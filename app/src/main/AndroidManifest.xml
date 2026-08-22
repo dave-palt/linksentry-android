@@ -45,6 +45,20 @@
                 <data android:scheme="http" />
                 <data android:scheme="https" />
             </intent-filter>
+            <!-- Share-sheet intake: "share to LinkSentry" from any app. The
+                 URL is extracted from EXTRA_TEXT; non-URL text is ignored. -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+            <!-- Text-selection intake: "Inspect link" in the floating toolbar
+                 when the user selects a URL in any app. -->
+            <intent-filter>
+                <action android:name="android.intent.action.PROCESS_TEXT" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
         </activity>
     </application>
 

@@ -8,15 +8,18 @@ import com.dav3.linksentry.domain.model.HandlerApp
 import com.dav3.linksentry.domain.model.HistoryAction
 import com.dav3.linksentry.domain.model.UrlFacts
 import com.dav3.linksentry.domain.model.Verdict
+import com.dav3.linksentry.domain.repository.HandlerPrefsRepository
 import com.dav3.linksentry.domain.repository.HistoryRepository
 import com.dav3.linksentry.domain.repository.SettingsRepository
 import com.dav3.linksentry.domain.system.BrowserRoleChecker
+import com.dav3.linksentry.domain.system.HandlerRanker
 import com.dav3.linksentry.domain.system.HandlerResolver
 import com.dav3.linksentry.domain.system.LinkActions
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -36,6 +39,9 @@ sealed interface InspectUiState {
         val verdict: Verdict,
         val handlers: List<HandlerApp>,
         val cleanedUrl: String,
+        /** Editable URL field: starts as the submitted URL; edits don't
+         *  re-trigger analysis until the user resubmits. */
+        val input: String = url,
     ) : InspectUiState
 
     /** Submitted text could not be parsed as a URL. */
@@ -47,8 +53,9 @@ class InspectViewModel @Inject constructor(
     private val resolver: HandlerResolver,
     private val actions: LinkActions,
     private val history: HistoryRepository,
-    settingsRepo: SettingsRepository,
+    private val settingsRepo: SettingsRepository,
     private val roleChecker: BrowserRoleChecker,
+    private val handlerPrefs: HandlerPrefsRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<InspectUiState>(InspectUiState.Manual())
@@ -68,7 +75,16 @@ class InspectViewModel @Inject constructor(
                 _uiState.value = InspectUiState.Invalid(trimmed)
                 return@launch
             }
-            val handlers = resolver.resolve(Uri.parse(analysis.facts.raw))
+            val resolved = resolver.resolve(Uri.parse(analysis.facts.raw))
+            // Launcher-style ordering: user's most-recently/most-used apps
+            // for this domain first, then per-scheme, then browsers A→Z.
+            val usage = handlerPrefs.observeAll().first()
+            val handlers = HandlerRanker.rank(
+                handlers = resolved,
+                usage = usage,
+                host = analysis.facts.host,
+                scheme = analysis.facts.scheme,
+            )
             _uiState.value = InspectUiState.Inspect(
                 url = analysis.facts.raw,
                 facts = analysis.facts,
@@ -90,6 +106,10 @@ class InspectViewModel @Inject constructor(
         if (state !is InspectUiState.Inspect) return
         if (actions.openWith(app, state.url)) {
             viewModelScope.launch {
+                // Persist usage so the picker reorders launcher-style:
+                // domain preference outranks scheme-wide preference.
+                handlerPrefs.recordUse(HandlerRanker.domainKey(state.facts.host), app.packageName)
+                handlerPrefs.recordUse(HandlerRanker.schemeKey(state.facts.scheme), app.packageName)
                 history.record(state.url, state.facts.host, state.verdict.worst, HistoryAction.OPENED_WITH)
             }
         }
@@ -123,15 +143,28 @@ class InspectViewModel @Inject constructor(
     }
 
     fun reset() {
-        _uiState.value = InspectUiState.Manual(isDefaultBrowser = roleChecker.isDefaultBrowser())
+        // Keep the URL in the input field when it's valued (user asked:
+        // "keeping the input when valued") — only the analysis is dropped.
+        val kept = when (val current = _uiState.value) {
+            is InspectUiState.Manual -> current.input
+            is InspectUiState.Inspect -> current.input
+            is InspectUiState.Invalid -> current.input
+        }
+        _uiState.value = InspectUiState.Manual(
+            input = kept,
+            isDefaultBrowser = roleChecker.isDefaultBrowser(),
+        )
     }
 
-    /** Track manual-mode text input. */
+    /** Track the editable URL field in any mode. */
     fun onInputChange(input: String) {
         val current = _uiState.value
         _uiState.value = when (current) {
             is InspectUiState.Manual -> current.copy(input = input)
-            else -> InspectUiState.Manual(
+            // Editing while results are showing: update the field, keep the
+            // analysis until the user resubmits.
+            is InspectUiState.Inspect -> current.copy(input = input)
+            is InspectUiState.Invalid -> InspectUiState.Manual(
                 input = input,
                 isDefaultBrowser = roleChecker.isDefaultBrowser(),
             )
