@@ -8,6 +8,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import com.dav3.linksentry.data.local.SettingsRepositoryImpl
+import com.dav3.linksentry.domain.analyze.SharedTextExtractor
 import com.dav3.linksentry.domain.model.ThemeMode
 import com.dav3.linksentry.ui.nav.LinkSentryNavHost
 import com.dav3.linksentry.ui.theme.LinkSentryTheme
@@ -23,7 +24,7 @@ import javax.inject.Inject
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
-    /** URL handed in by a VIEW intent; consumed once by the NavHost. */
+    /** URL handed in by a VIEW / SEND / PROCESS_TEXT intent; consumed once by the NavHost. */
     private val pendingUrl = MutableStateFlow<String?>(null)
 
     @Inject
@@ -61,5 +62,20 @@ class MainActivity : ComponentActivity() {
         pendingUrl.value = intentUrl(intent)
     }
 
-    private fun intentUrl(intent: Intent?): String? = intent?.takeIf { it.action == android.content.Intent.ACTION_VIEW }?.dataString
+    private fun intentUrl(intent: Intent?): String? {
+        intent ?: return null
+        return when (intent.action) {
+            Intent.ACTION_VIEW -> intent.dataString
+            // Share sheet / text selection: pull the first URL out of the text.
+            Intent.ACTION_SEND, Intent.ACTION_PROCESS_TEXT -> {
+                val text = if (intent.hasExtra(Intent.EXTRA_PROCESS_TEXT)) {
+                    intent.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT)?.toString()
+                } else {
+                    intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString()
+                }
+                SharedTextExtractor.firstUrl(text)
+            }
+            else -> null
+        }
+    }
 }

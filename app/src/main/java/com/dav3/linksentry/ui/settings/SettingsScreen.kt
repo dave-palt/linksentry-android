@@ -53,6 +53,10 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { repository.setTheme(mode) }
     }
 
+    fun setHandlerLayout(layout: com.dav3.linksentry.domain.model.HandlerLayout) {
+        viewModelScope.launch { repository.setHandlerLayout(layout) }
+    }
+
     fun openDefaultAppsSettings() = actions.openDefaultAppsSettings()
 }
 
@@ -69,6 +73,7 @@ fun SettingsScreen(
         onSetRetention = viewModel::setRetentionDays,
         onSetTheme = viewModel::setTheme,
         onOpenDefaultAppsSettings = viewModel::openDefaultAppsSettings,
+        onSetHandlerLayout = viewModel::setHandlerLayout,
     )
 }
 
@@ -81,6 +86,7 @@ fun SettingsContent(
     onSetRetention: (Int?) -> Unit,
     onSetTheme: (ThemeMode) -> Unit,
     onOpenDefaultAppsSettings: () -> Unit,
+    onSetHandlerLayout: (com.dav3.linksentry.domain.model.HandlerLayout) -> Unit = {},
 ) {
     Column(
         Modifier
@@ -148,7 +154,34 @@ fun SettingsContent(
                 ThemeChip("Dark", ThemeMode.DARK, settings, onSetTheme)
             }
         }
+
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Handler list layout", style = MaterialTheme.typography.bodyLarge)
+            Text(
+                "How the \"Open with\" picker is laid out.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                LayoutChip("List", com.dav3.linksentry.domain.model.HandlerLayout.LIST, settings, onSetHandlerLayout)
+                LayoutChip("Grid", com.dav3.linksentry.domain.model.HandlerLayout.GRID, settings, onSetHandlerLayout)
+            }
+        }
     }
+}
+
+@Composable
+private fun LayoutChip(
+    label: String,
+    layout: com.dav3.linksentry.domain.model.HandlerLayout,
+    settings: AppSettings,
+    onSetHandlerLayout: (com.dav3.linksentry.domain.model.HandlerLayout) -> Unit,
+) {
+    FilterChip(
+        selected = settings.handlerLayout == layout,
+        onClick = { onSetHandlerLayout(layout) },
+        label = { Text(label) },
+    )
 }
 
 @Composable
