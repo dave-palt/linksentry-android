@@ -128,7 +128,21 @@ class HistoryAndSettingsTest {
 
         override suspend fun clear(): Int = 0
 
+        override suspend fun deleteById(id: Long) {}
+
         override suspend fun count(): Int = inserts.size
+
+        override suspend fun bumpOpened(url: String, ts: Long, severity: String?): Int = 0
+
+        override suspend fun bumpAction(url: String, ts: Long, action: String, severity: String?): Int = 0
+
+        override suspend fun touchInspect(url: String, severity: String?): Int = 0
+
+        override suspend fun updateLastApp(url: String, pkg: String, activity: String?, label: String?): Int = 0
+
+        override fun search(pattern: String): kotlinx.coroutines.flow.Flow<List<HistoryEntity>> = flow
+
+        override suspend fun deleteByPattern(pattern: String): Int = 0
     }
 
     private class FakeSettingsRepo(private var s: AppSettings) : SettingsRepository {
@@ -150,5 +164,9 @@ class HistoryAndSettingsTest {
         override suspend fun setHandlerLayout(layout: com.dav3.linksentry.domain.model.HandlerLayout) {}
 
         override suspend fun setOpenCleaned(enabled: Boolean) {}
+
+        override suspend fun addCustomTrackingParam(name: String) {}
+
+        override suspend fun removeCustomTrackingParam(name: String) {}
     }
 }

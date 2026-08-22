@@ -1,6 +1,7 @@
 package com.dav3.linksentry.domain.analyze
 
 import com.dav3.linksentry.domain.model.CleanupCategory
+import com.dav3.linksentry.domain.model.ParamBehavior
 import com.dav3.linksentry.domain.model.Severity.DANGER
 import com.dav3.linksentry.domain.model.Severity.INFO
 import com.dav3.linksentry.domain.model.Severity.WARN
@@ -240,6 +241,43 @@ class UrlAnalyzerTest {
     fun `cleanedUrl on clean URL is identity`() {
         val url = "https://example.com/a/b?q=1"
         assertEquals(url, UrlAnalyzer.cleanedUrl(UrlAnalyzer.parse(url)))
+    }
+
+    @Test
+    fun `paramBehavior honors custom tracking rules`() {
+        assertEquals(ParamBehavior.REMOVE, UrlAnalyzer.paramBehavior("utm_source"))
+        assertEquals(ParamBehavior.REMOVE, UrlAnalyzer.paramBehavior("fbclid"))
+        assertEquals(ParamBehavior.KEEP, UrlAnalyzer.paramBehavior("trackid"))
+        assertEquals(
+            ParamBehavior.ALWAYS_REMOVE,
+            UrlAnalyzer.paramBehavior("trackid", customTracking = setOf("trackid")),
+        )
+    }
+
+    @Test
+    fun `manual removeParams strips unknown params`() {
+        val f = UrlAnalyzer.analyze("https://a.com/p?trackid=123&q=1").facts
+        val c = UrlAnalyzer.cleanup(f, removeParams = setOf("trackid"))
+        assertEquals("https://a.com/p?q=1", c.url)
+        assertEquals(1, c.removals.size)
+        assertEquals("trackid", c.removals.first().token)
+    }
+
+    @Test
+    fun `extraTracking treats custom names like built-ins`() {
+        val f = UrlAnalyzer.analyze("https://a.com/p?trackid=123&q=1").facts
+        val c = UrlAnalyzer.cleanup(f, extraTracking = setOf("trackid"))
+        assertEquals("https://a.com/p?q=1", c.url)
+        assertEquals("You marked this parameter as tracking", c.removals.first().detail)
+    }
+
+    @Test
+    fun `keepParams still wins over extraTracking`() {
+        val f = UrlAnalyzer.analyze("https://a.com/p?trackid=123").facts
+        val c = UrlAnalyzer.cleanup(f, keepParams = setOf("trackid"), extraTracking = setOf("trackid"))
+        assertEquals("https://a.com/p?trackid=123", c.url)
+        // Listed (it IS flagged) but kept by explicit user choice.
+        assertEquals(1, c.removals.size)
     }
 
     @Test

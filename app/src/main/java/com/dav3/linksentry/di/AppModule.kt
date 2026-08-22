@@ -39,4 +39,8 @@ abstract class AppModule {
     @Binds
     @Singleton
     abstract fun bindHandlerPrefsRepository(impl: com.dav3.linksentry.data.local.HandlerPrefsRepositoryImpl): com.dav3.linksentry.domain.repository.HandlerPrefsRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindDangerOverridesRepository(impl: com.dav3.linksentry.data.local.DangerOverridesRepositoryImpl): com.dav3.linksentry.domain.repository.DangerOverridesRepository
 }
