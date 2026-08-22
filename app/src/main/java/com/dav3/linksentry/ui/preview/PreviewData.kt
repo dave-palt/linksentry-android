@@ -19,7 +19,6 @@ import com.dav3.linksentry.ui.history.HistoryViewModel
 import com.dav3.linksentry.ui.settings.SettingsViewModel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.map
 
 /**
  * In-memory fakes + demo data for @Preview rendering (also exercised by the
@@ -67,11 +66,9 @@ object NoopLinkActions : LinkActions {
     override fun openDefaultAppsSettings() = Unit
 }
 
-fun previewHistoryViewModel(records: List<LinkRecord>): HistoryViewModel =
-    HistoryViewModel(FakeHistoryRepo(records))
+fun previewHistoryViewModel(records: List<LinkRecord>): HistoryViewModel = HistoryViewModel(FakeHistoryRepo(records))
 
-fun previewSettingsViewModel(settings: AppSettings): SettingsViewModel =
-    SettingsViewModel(FakeSettingsRepo(settings), FakeRoleChecker(true), NoopLinkActions)
+fun previewSettingsViewModel(settings: AppSettings): SettingsViewModel = SettingsViewModel(FakeSettingsRepo(settings), FakeRoleChecker(true), NoopLinkActions)
 
 val demoFactsDangerous = UrlFacts(
     raw = "http://paypal.com.secure-login@203.0.113.7:8080/session/verify?utm_source=mail&fbclid=abc123",
