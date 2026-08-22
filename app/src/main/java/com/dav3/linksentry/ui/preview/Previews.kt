@@ -4,8 +4,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.tooling.preview.Preview
 import com.dav3.linksentry.domain.model.AppSettings
-import com.dav3.linksentry.domain.model.HandlerApp
-import com.dav3.linksentry.domain.model.Severity
 import com.dav3.linksentry.domain.model.ThemeMode
 import com.dav3.linksentry.ui.history.HistoryContent
 import com.dav3.linksentry.ui.inspect.InspectContent
