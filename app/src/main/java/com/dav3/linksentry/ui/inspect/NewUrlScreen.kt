@@ -2,6 +2,7 @@ package com.dav3.linksentry.ui.inspect
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -18,7 +19,11 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 
@@ -47,6 +52,17 @@ fun NewUrlScreen(
             )
         },
     ) { padding ->
+        // Seed from whatever is on screen: an inspected link arrives as
+        // Inspect.input, the manual tab as Manual.input. Editing must KEEP
+        // the current link (user: "allow to edit the url keeping the input
+        // when valued") — never blank when a link is already there.
+        val seed = when (val s = state) {
+            is InspectUiState.Manual -> s.input
+            is InspectUiState.Inspect -> s.input
+            is InspectUiState.Invalid -> s.input
+        }
+        var text by remember(seed) { mutableStateOf(seed) }
+
         Column(
             Modifier
                 .fillMaxSize()
@@ -55,28 +71,41 @@ fun NewUrlScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Text(
-                "Paste or type a URL to inspect. The link stays on this device — nothing is opened until you choose an app.",
+                "Edit the link or paste a new one. It stays on this device — nothing is opened until you choose an app.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            // Multi-line textarea: long URLs stay readable instead of
+            // scrolling away in one thin line.
             OutlinedTextField(
-                value = (state as? InspectUiState.Manual)?.input ?: "",
-                onValueChange = viewModel::onInputChange,
+                value = text,
+                onValueChange = { text = it },
                 placeholder = { Text("https://…") },
                 singleLine = false,
+                minLines = 4,
+                maxLines = 10,
+                textStyle = MaterialTheme.typography.bodyMedium.copy(
+                    fontFamily = FontFamily.Monospace,
+                ),
                 modifier = Modifier.fillMaxWidth(),
             )
-            androidx.compose.material3.Button(
-                onClick = {
-                    val s = state
-                    if (s is InspectUiState.Manual && s.input.isNotBlank()) {
-                        viewModel.submitText(s.input)
-                        onSubmitted()
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                androidx.compose.material3.Button(
+                    onClick = {
+                        if (text.isNotBlank()) {
+                            viewModel.submitText(text)
+                            onSubmitted()
+                        }
+                    },
+                    enabled = text.isNotBlank(),
+                ) {
+                    Text("Inspect link")
+                }
+                if (text.isNotEmpty()) {
+                    androidx.compose.material3.TextButton(onClick = { text = "" }) {
+                        Text("Clear")
                     }
-                },
-                enabled = (state as? InspectUiState.Manual)?.input?.isNotBlank() == true,
-            ) {
-                Text("Inspect link")
+                }
             }
         }
     }

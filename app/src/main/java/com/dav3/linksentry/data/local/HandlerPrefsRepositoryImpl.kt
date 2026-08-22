@@ -35,4 +35,8 @@ class HandlerPrefsRepositoryImpl @Inject constructor(
     override suspend fun forget(key: String, pkg: String) {
         dao.delete(key, pkg)
     }
+
+    override suspend fun clearAll() = dao.clearAll()
+
+    override suspend fun clearKey(key: String) = dao.clearKey(key)
 }

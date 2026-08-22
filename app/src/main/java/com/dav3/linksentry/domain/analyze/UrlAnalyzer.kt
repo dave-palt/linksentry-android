@@ -1,6 +1,9 @@
 package com.dav3.linksentry.domain.analyze
 
 import com.dav3.linksentry.domain.model.Analysis
+import com.dav3.linksentry.domain.model.CleanupCategory
+import com.dav3.linksentry.domain.model.LinkCleanup
+import com.dav3.linksentry.domain.model.ParamBehavior
 import com.dav3.linksentry.domain.model.RiskSignal
 import com.dav3.linksentry.domain.model.Severity
 import com.dav3.linksentry.domain.model.Severity.DANGER
@@ -21,6 +24,7 @@ import com.dav3.linksentry.domain.model.SignalId.TRACKING_PARAMS
 import com.dav3.linksentry.domain.model.SignalId.VERY_LONG_URL
 import com.dav3.linksentry.domain.model.UrlFacts
 import com.dav3.linksentry.domain.model.UrlParam
+import com.dav3.linksentry.domain.model.UrlRemoval
 import com.dav3.linksentry.domain.model.Verdict
 import java.net.URLDecoder
 
@@ -243,13 +247,57 @@ object UrlAnalyzer {
         return n in TRACKING_PARAM_NAMES || n.startsWith("utm_")
     }
 
+    /**
+     * Default behavior for a param name, honoring the user's saved
+     * "always remove" rules — single source of truth for the UI.
+     */
+    fun paramBehavior(name: String, customTracking: Set<String> = emptySet()): ParamBehavior {
+        val n = name.lowercase()
+        return when {
+            n in customTracking -> ParamBehavior.ALWAYS_REMOVE
+            isTracking(n) -> ParamBehavior.REMOVE
+            else -> ParamBehavior.KEEP
+        }
+    }
+
     // ---------- cleaned URL ----------
 
-    /** URL with credentials stripped and tracking params removed. */
-    fun cleanedUrl(f: UrlFacts): String {
-        if (f.hasParseError) return f.raw
+    /**
+     * Everything the cleaner would strip, plus the URL with it all applied.
+     * `keepParams` / `keepCredentials` let the user opt back in per removal.
+     * `removeParams` are user-chosen extra removals (unknown-but-unwanted
+     * params like "trackid"); `extraTracking` are param names the user has
+     * saved as "always remove" — treated exactly like the built-in list.
+     */
+    fun cleanup(
+        f: UrlFacts,
+        keepParams: Set<String> = emptySet(),
+        keepCredentials: Boolean = false,
+        removeParams: Set<String> = emptySet(),
+        extraTracking: Set<String> = emptySet(),
+    ): LinkCleanup {
+        if (f.hasParseError) return LinkCleanup(f.raw, emptyList())
+        // Listed = would be flagged (tracking, user-taught, or manually
+        // picked). Stripped = listed AND not opted back in via keepParams.
+        fun isListed(name: String) = isTracking(name) || name in extraTracking || name in removeParams
+        fun isRemoved(name: String) = isListed(name) && name !in keepParams
+        val removals = buildList {
+            if (f.userInfo != null) {
+                add(UrlRemoval(CleanupCategory.CREDENTIALS, f.userInfo, "Credentials embedded in the link"))
+            }
+            f.params.filter { isListed(it.name) }.forEach {
+                val custom = it.name in extraTracking && !isTracking(it.name)
+                add(
+                    UrlRemoval(
+                        CleanupCategory.TRACKING_PARAM,
+                        it.name,
+                        if (custom) "You marked this parameter as tracking" else "Tracking parameter",
+                    ),
+                )
+            }
+        }
         val portPart = if (f.port != -1) ":${f.port}" else ""
-        val kept = f.params.filterNot { isTracking(it.name) }
+        val kept = f.params.filterNot { isRemoved(it.name) }
         val queryPart = if (kept.isEmpty()) {
             ""
         } else {
@@ -258,6 +306,19 @@ object UrlAnalyzer {
             }
         }
         val fragmentPart = if (f.fragment != null) "#${f.fragment}" else ""
-        return "${f.scheme}://${f.host}$portPart${f.path}$queryPart$fragmentPart"
+        val credPart = if (f.userInfo != null && !keepCredentials) {
+            ""
+        } else if (f.userInfo != null) {
+            "${f.userInfo}@"
+        } else {
+            ""
+        }
+        return LinkCleanup(
+            url = "${f.scheme}://$credPart${f.host}$portPart${f.path}$queryPart$fragmentPart",
+            removals = removals,
+        )
     }
+
+    /** URL with credentials stripped and tracking params removed. */
+    fun cleanedUrl(f: UrlFacts): String = cleanup(f).url
 }

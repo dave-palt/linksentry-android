@@ -1,5 +1,7 @@
 package com.dav3.linksentry.domain.analyze
 
+import com.dav3.linksentry.domain.model.CleanupCategory
+import com.dav3.linksentry.domain.model.ParamBehavior
 import com.dav3.linksentry.domain.model.Severity.DANGER
 import com.dav3.linksentry.domain.model.Severity.INFO
 import com.dav3.linksentry.domain.model.Severity.WARN
@@ -239,6 +241,79 @@ class UrlAnalyzerTest {
     fun `cleanedUrl on clean URL is identity`() {
         val url = "https://example.com/a/b?q=1"
         assertEquals(url, UrlAnalyzer.cleanedUrl(UrlAnalyzer.parse(url)))
+    }
+
+    @Test
+    fun `paramBehavior honors custom tracking rules`() {
+        assertEquals(ParamBehavior.REMOVE, UrlAnalyzer.paramBehavior("utm_source"))
+        assertEquals(ParamBehavior.REMOVE, UrlAnalyzer.paramBehavior("fbclid"))
+        assertEquals(ParamBehavior.KEEP, UrlAnalyzer.paramBehavior("trackid"))
+        assertEquals(
+            ParamBehavior.ALWAYS_REMOVE,
+            UrlAnalyzer.paramBehavior("trackid", customTracking = setOf("trackid")),
+        )
+    }
+
+    @Test
+    fun `manual removeParams strips unknown params`() {
+        val f = UrlAnalyzer.analyze("https://a.com/p?trackid=123&q=1").facts
+        val c = UrlAnalyzer.cleanup(f, removeParams = setOf("trackid"))
+        assertEquals("https://a.com/p?q=1", c.url)
+        assertEquals(1, c.removals.size)
+        assertEquals("trackid", c.removals.first().token)
+    }
+
+    @Test
+    fun `extraTracking treats custom names like built-ins`() {
+        val f = UrlAnalyzer.analyze("https://a.com/p?trackid=123&q=1").facts
+        val c = UrlAnalyzer.cleanup(f, extraTracking = setOf("trackid"))
+        assertEquals("https://a.com/p?q=1", c.url)
+        assertEquals("You marked this parameter as tracking", c.removals.first().detail)
+    }
+
+    @Test
+    fun `keepParams still wins over extraTracking`() {
+        val f = UrlAnalyzer.analyze("https://a.com/p?trackid=123").facts
+        val c = UrlAnalyzer.cleanup(f, keepParams = setOf("trackid"), extraTracking = setOf("trackid"))
+        assertEquals("https://a.com/p?trackid=123", c.url)
+        // Listed (it IS flagged) but kept by explicit user choice.
+        assertEquals(1, c.removals.size)
+    }
+
+    @Test
+    fun `cleanup lists every removal with category`() {
+        val c = UrlAnalyzer.cleanup(UrlAnalyzer.parse("https://u:pw@a.com/p?utm_source=x&id=2&fbclid=z"))
+        assertEquals("https://a.com/p?id=2", c.url)
+        assertEquals(
+            listOf(CleanupCategory.CREDENTIALS, CleanupCategory.TRACKING_PARAM, CleanupCategory.TRACKING_PARAM),
+            c.removals.map { it.category },
+        )
+        assertEquals(listOf("u:pw", "utm_source", "fbclid"), c.removals.map { it.token })
+    }
+
+    @Test
+    fun `cleanup keepParams keeps opted-in tracking param`() {
+        val c = UrlAnalyzer.cleanup(
+            UrlAnalyzer.parse("https://a.com/p?utm_source=x&id=2"),
+            keepParams = setOf("utm_source"),
+        )
+        assertEquals("https://a.com/p?utm_source=x&id=2", c.url)
+        // Still listed as a removal (it IS tracking), but kept by user choice.
+        assertEquals(1, c.removals.size)
+    }
+
+    @Test
+    fun `cleanup keepCredentials restores userinfo`() {
+        val c = UrlAnalyzer.cleanup(UrlAnalyzer.parse("https://u:pw@a.com/p"), keepCredentials = true)
+        assertEquals("https://u:pw@a.com/p", c.url)
+        assertEquals(1, c.removals.size)
+    }
+
+    @Test
+    fun `cleanup on clean URL removes nothing`() {
+        val c = UrlAnalyzer.cleanup(UrlAnalyzer.parse("https://a.com/p?id=2"))
+        assertEquals("https://a.com/p?id=2", c.url)
+        assertTrue(c.removals.isEmpty())
     }
 
     // ---------- verdict aggregation ----------

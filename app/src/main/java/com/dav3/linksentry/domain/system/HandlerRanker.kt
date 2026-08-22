@@ -21,9 +21,14 @@ object HandlerRanker {
 
     private const val DOMAIN_PREFIX = "domain:"
     private const val SCHEME_PREFIX = "scheme:"
+    private const val PSEUDO_PREFIX = "pseudo:"
 
     fun domainKey(host: String): String = DOMAIN_PREFIX + host.lowercase()
     fun schemeKey(scheme: String): String = SCHEME_PREFIX + scheme.lowercase()
+
+    /** Usage key for pseudo entries (copy actions) — scoped per domain so
+     *  "copy" on github.com doesn't float to the top on paypal.com. */
+    fun pseudoKey(host: String): String = PSEUDO_PREFIX + host.lowercase()
 
     fun rank(
         handlers: List<HandlerApp>,
@@ -50,7 +55,12 @@ object HandlerRanker {
             )
 
         val domainPicks = domainOrder.mapNotNull { pkg -> handlers.find { it.packageName == pkg } }
-        val schemePicks = schemeOrder.mapNotNull { pkg -> handlers.find { it.packageName == pkg } }
+        val domainPkgs = domainPicks.map { it.packageName }.toSet()
+        // An app used for both domain and scheme is already in the domain
+        // tier — never list it twice (the pinned/recent app must not dup).
+        val schemePicks = schemeOrder
+            .mapNotNull { pkg -> handlers.find { it.packageName == pkg } }
+            .filter { it.packageName !in domainPkgs }
 
         return domainPicks + schemePicks + rest
     }

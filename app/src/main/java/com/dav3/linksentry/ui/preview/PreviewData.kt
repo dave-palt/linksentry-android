@@ -38,6 +38,12 @@ class FakeHistoryRepo(records: List<LinkRecord> = emptyList()) : HistoryReposito
     ) = Unit
 
     override suspend fun clear() = Unit
+
+    override suspend fun delete(id: Long) = Unit
+
+    override fun search(query: String) = flow
+    override suspend fun deleteFound(query: String) = 0
+    override suspend fun recordApp(url: String, pkg: String, activity: String?, label: String?) = Unit
 }
 
 class FakeSettingsRepo(initial: AppSettings = AppSettings()) : SettingsRepository {
@@ -52,6 +58,12 @@ class FakeSettingsRepo(initial: AppSettings = AppSettings()) : SettingsRepositor
     override suspend fun setTheme(mode: com.dav3.linksentry.domain.model.ThemeMode) = Unit
 
     override suspend fun setHandlerLayout(layout: com.dav3.linksentry.domain.model.HandlerLayout) = Unit
+
+    override suspend fun setOpenCleaned(enabled: Boolean) = Unit
+
+    override suspend fun addCustomTrackingParam(name: String) = Unit
+
+    override suspend fun removeCustomTrackingParam(name: String) = Unit
 }
 
 class FakeRoleChecker(private val isDefault: Boolean = true) : BrowserRoleChecker {
@@ -68,9 +80,41 @@ object NoopLinkActions : LinkActions {
     override fun openDefaultAppsSettings() = Unit
 }
 
-fun previewHistoryViewModel(records: List<LinkRecord>): HistoryViewModel = HistoryViewModel(FakeHistoryRepo(records))
+fun previewHistoryViewModel(records: List<LinkRecord>): HistoryViewModel = HistoryViewModel(FakeHistoryRepo(records), NoopLinkActions, FakeDangerOverrides())
 
-fun previewSettingsViewModel(settings: AppSettings): SettingsViewModel = SettingsViewModel(FakeSettingsRepo(settings), FakeRoleChecker(true), NoopLinkActions)
+fun previewSettingsViewModel(settings: AppSettings): SettingsViewModel = SettingsViewModel(FakeSettingsRepo(settings), FakeRoleChecker(true), NoopLinkActions, FakeHandlerPrefs(), FakeDangerOverrides())
+
+class FakeDangerOverrides : com.dav3.linksentry.domain.repository.DangerOverridesRepository {
+    override fun observeAll() = kotlinx.coroutines.flow.MutableStateFlow(
+        listOf<com.dav3.linksentry.domain.model.DangerOverride>(
+            com.dav3.linksentry.domain.model.DangerOverride.Host("trusted.example.com"),
+        ),
+    )
+
+    override suspend fun all(): List<com.dav3.linksentry.domain.model.DangerOverride> = emptyList()
+
+    override suspend fun grant(override: com.dav3.linksentry.domain.model.DangerOverride) = Unit
+
+    override suspend fun clearAll() = Unit
+
+    override suspend fun revoke(override: com.dav3.linksentry.domain.model.DangerOverride) = Unit
+}
+
+class FakeHandlerPrefs : com.dav3.linksentry.domain.repository.HandlerPrefsRepository {
+    override fun observeAll() = kotlinx.coroutines.flow.MutableStateFlow(
+        emptyList<com.dav3.linksentry.domain.system.HandlerUsage>(),
+    )
+
+    override suspend fun forKey(key: String) = emptyList<com.dav3.linksentry.domain.system.HandlerUsage>()
+
+    override suspend fun recordUse(key: String, pkg: String) = Unit
+
+    override suspend fun forget(key: String, pkg: String) = Unit
+
+    override suspend fun clearAll() = Unit
+
+    override suspend fun clearKey(key: String) = Unit
+}
 
 val demoFactsDangerous = UrlFacts(
     raw = "http://paypal.com.secure-login@203.0.113.7:8080/session/verify?utm_source=mail&fbclid=abc123",

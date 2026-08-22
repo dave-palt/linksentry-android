@@ -14,4 +14,10 @@ interface HandlerPrefsRepository {
 
     /** Remove a stored preference (e.g. app uninstalled). */
     suspend fun forget(key: String, pkg: String)
+
+    /** Wipe all usage (global reset from Settings). */
+    suspend fun clearAll()
+
+    /** Wipe usage scoped to one key, e.g. one domain (per-domain reset). */
+    suspend fun clearKey(key: String)
 }

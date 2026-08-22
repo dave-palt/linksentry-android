@@ -29,7 +29,13 @@ leaking a URL, or phoning home. This is enforced in CI.
 - **Copy / Copy cleaned / Share** — cleaned strips credentials + tracking
   parameters.
 - **Manual inspect** — paste or type any URL.
-- **Local history** (Room, on-device only) with retention control.
+- **Link cleanup** — per-param Keep/Remove, "always remove" personal rules,
+  custom tracking params, and a live "will open" preview of the effective URL.
+- **Danger gate** — DANGER links hide the handler list behind a confirmation
+  card; per-host and per-signal-set overrides (revocable in Settings).
+- **Local history** (Room, on-device only) with retention control, one row
+  per URL (open count + last opened), content filter with delete-all-found,
+  and tap-the-icon re-open in the last handler app.
 - **No network. No analytics. No tracking. Zero permissions.**
 
 ## Install
