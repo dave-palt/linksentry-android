@@ -5,9 +5,15 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Switch
@@ -38,9 +44,18 @@ class SettingsViewModel @Inject constructor(
     roleChecker: BrowserRoleChecker,
     private val actions: LinkActions,
     private val handlerPrefs: com.dav3.linksentry.domain.repository.HandlerPrefsRepository,
+    private val dangerOverridesRepo: com.dav3.linksentry.domain.repository.DangerOverridesRepository,
 ) : ViewModel() {
     val settings = repository.settings
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), AppSettings())
+
+    /** Stored danger overrides ("don't warn again") for the list view. */
+    val dangerOverrides = dangerOverridesRepo.observeAll()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun revokeOverride(override: com.dav3.linksentry.domain.model.DangerOverride) {
+        viewModelScope.launch { dangerOverridesRepo.revoke(override) }
+    }
 
     fun setRecordHistory(enabled: Boolean) {
         viewModelScope.launch { repository.setRecordHistory(enabled) }
@@ -75,6 +90,7 @@ fun SettingsScreen(
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val settings by viewModel.settings.collectAsState()
+    val overrides by viewModel.dangerOverrides.collectAsState()
     SettingsContent(
         settings = settings,
         isDefaultBrowser = isDefaultBrowser,
@@ -85,6 +101,8 @@ fun SettingsScreen(
         onSetHandlerLayout = viewModel::setHandlerLayout,
         onSetOpenCleaned = viewModel::setOpenCleaned,
         onResetSorting = viewModel::resetHandlerSorting,
+        dangerOverrides = overrides,
+        onRevokeOverride = viewModel::revokeOverride,
     )
 }
 
@@ -100,10 +118,13 @@ fun SettingsContent(
     onSetHandlerLayout: (com.dav3.linksentry.domain.model.HandlerLayout) -> Unit = {},
     onSetOpenCleaned: (Boolean) -> Unit = {},
     onResetSorting: () -> Unit = {},
+    dangerOverrides: List<com.dav3.linksentry.domain.model.DangerOverride> = emptyList(),
+    onRevokeOverride: (com.dav3.linksentry.domain.model.DangerOverride) -> Unit = {},
 ) {
     Column(
         Modifier
             .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
             .padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
@@ -212,6 +233,42 @@ fun SettingsContent(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 LayoutChip("List", com.dav3.linksentry.domain.model.HandlerLayout.LIST, settings, onSetHandlerLayout)
                 LayoutChip("Grid", com.dav3.linksentry.domain.model.HandlerLayout.GRID, settings, onSetHandlerLayout)
+            }
+        }
+
+        // ---- Allowed dangerous links ("don't warn again" overrides) ----
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Allowed dangerous links", style = MaterialTheme.typography.bodyLarge)
+            Text(
+                "Links you gave a green light. Delete to be warned again.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (dangerOverrides.isEmpty()) {
+                Text(
+                    "Nothing here yet.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.outline,
+                )
+            }
+            dangerOverrides.forEach { override ->
+                val label = when (override) {
+                    is com.dav3.linksentry.domain.model.DangerOverride.Host -> "Site: ${override.host}"
+                    is com.dav3.linksentry.domain.model.DangerOverride.Signals -> "Link type: ${override.ids.joinToString(", ") { it.name }}"
+                }
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                    IconButton(onClick = { onRevokeOverride(override) }) {
+                        Icon(
+                            Icons.Filled.Delete,
+                            contentDescription = "Delete override",
+                        )
+                    }
+                }
             }
         }
     }

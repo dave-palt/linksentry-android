@@ -25,6 +25,7 @@ class SettingsRepositoryImpl @Inject constructor(
         val THEME = stringPreferencesKey("theme")
         val HANDLER_LAYOUT = stringPreferencesKey("handler_layout")
         val OPEN_CLEANED = booleanPreferencesKey("open_cleaned")
+        val CUSTOM_TRACKING = stringPreferencesKey("custom_tracking_params")
     }
 
     private val dataStore = context.appDataStore
@@ -41,6 +42,8 @@ class SettingsRepositoryImpl @Inject constructor(
             theme = p[Keys.THEME]?.let { runCatching { ThemeMode.valueOf(it) }.getOrNull() }
                 ?: ThemeMode.SYSTEM,
             openCleaned = p[Keys.OPEN_CLEANED] ?: false,
+            customTrackingParams = (p[Keys.CUSTOM_TRACKING] ?: "")
+                .split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet(),
             handlerLayout = p[Keys.HANDLER_LAYOUT]?.let {
                 runCatching { com.dav3.linksentry.domain.model.HandlerLayout.valueOf(it) }.getOrNull()
             } ?: com.dav3.linksentry.domain.model.HandlerLayout.LIST,
@@ -69,5 +72,24 @@ class SettingsRepositoryImpl @Inject constructor(
 
     override suspend fun setOpenCleaned(enabled: Boolean) {
         dataStore.edit { it[Keys.OPEN_CLEANED] = enabled }
+    }
+
+    override suspend fun addCustomTrackingParam(name: String) {
+        val n = name.trim().lowercase()
+        if (n.isEmpty()) return
+        dataStore.edit { p ->
+            val cur = (p[Keys.CUSTOM_TRACKING] ?: "")
+                .split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+            p[Keys.CUSTOM_TRACKING] = (cur + n).sorted().joinToString(",")
+        }
+    }
+
+    override suspend fun removeCustomTrackingParam(name: String) {
+        val n = name.trim().lowercase()
+        dataStore.edit { p ->
+            val cur = (p[Keys.CUSTOM_TRACKING] ?: "")
+                .split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+            p[Keys.CUSTOM_TRACKING] = (cur - n).sorted().joinToString(",")
+        }
     }
 }

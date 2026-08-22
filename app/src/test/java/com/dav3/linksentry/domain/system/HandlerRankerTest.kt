@@ -60,6 +60,20 @@ class HandlerRankerTest {
     }
 
     @Test
+    fun `app used for both domain and scheme appears once`() {
+        val chrome = HandlerApp("com.android.chrome", "Chrome", "c", isBrowser = true, icon = null)
+        val firefox = HandlerApp("org.mozilla.firefox", "Firefox", "f", isBrowser = true, icon = null)
+        val handlers = listOf(chrome, firefox)
+        val usage = listOf(
+            HandlerUsage(HandlerRanker.domainKey("example.com"), chrome.packageName, 3, 200),
+            HandlerUsage(HandlerRanker.schemeKey("https"), chrome.packageName, 3, 200),
+        )
+        val ranked = HandlerRanker.rank(handlers, usage, host = "example.com", scheme = "https")
+        assertEquals(listOf(chrome, firefox), ranked)
+        assertEquals(1, ranked.count { it.packageName == chrome.packageName })
+    }
+
+    @Test
     fun usage_for_other_domains_is_ignored() {
         val usage = listOf(
             HandlerUsage(HandlerRanker.domainKey("other.org"), "com.google.android.youtube", count = 4, lastUsed = 999),

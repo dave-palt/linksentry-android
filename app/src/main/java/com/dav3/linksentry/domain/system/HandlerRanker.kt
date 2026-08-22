@@ -55,7 +55,12 @@ object HandlerRanker {
             )
 
         val domainPicks = domainOrder.mapNotNull { pkg -> handlers.find { it.packageName == pkg } }
-        val schemePicks = schemeOrder.mapNotNull { pkg -> handlers.find { it.packageName == pkg } }
+        val domainPkgs = domainPicks.map { it.packageName }.toSet()
+        // An app used for both domain and scheme is already in the domain
+        // tier — never list it twice (the pinned/recent app must not dup).
+        val schemePicks = schemeOrder
+            .mapNotNull { pkg -> handlers.find { it.packageName == pkg } }
+            .filter { it.packageName !in domainPkgs }
 
         return domainPicks + schemePicks + rest
     }

@@ -69,7 +69,15 @@ fun InspectScreen(
             onToggleKeepParam = viewModel::toggleKeepParam,
             onToggleKeepCredentials = viewModel::toggleKeepCredentials,
             onToggleOpenCleaned = viewModel::toggleOpenCleaned,
+            onToggleRemoveParam = viewModel::toggleRemoveParam,
+            onMarkParamAsTracking = viewModel::markParamAsTracking,
             onResetSorting = viewModel::resetDomainSorting,
+            onEditUrl = viewModel::submitText,
+            onBypassGate = viewModel::bypassGate,
+            onTrustHostForever = viewModel::trustHostForever,
+            onConfirmOpen = viewModel::confirmOpen,
+            onCancelConfirm = viewModel::cancelConfirm,
+            onRevokeOverride = viewModel::revokeOverride,
             modifier = Modifier.padding(padding),
         )
     }

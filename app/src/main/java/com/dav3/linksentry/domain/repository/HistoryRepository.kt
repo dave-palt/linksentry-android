@@ -12,4 +12,16 @@ interface HistoryRepository {
     suspend fun record(url: String, host: String, severity: Severity?, action: HistoryAction)
 
     suspend fun clear()
+
+    /** Delete one history row (swipe/trash in the History list). */
+    suspend fun delete(id: Long)
+
+    /** Remember which app last handled [url] (History direct re-open). */
+    suspend fun recordApp(url: String, pkg: String, activity: String?, label: String?)
+
+    /** History rows whose URL or host contains [query] (case-insensitive). */
+    fun search(query: String): Flow<List<LinkRecord>>
+
+    /** Delete every row matching [query]; returns rows removed. */
+    suspend fun deleteFound(query: String): Int
 }
