@@ -94,18 +94,29 @@ class InspectViewModelTest {
         override suspend fun setRetentionDays(days: Int?) {}
         override suspend fun setTheme(mode: com.dav3.linksentry.domain.model.ThemeMode) {}
         override suspend fun setHandlerLayout(layout: com.dav3.linksentry.domain.model.HandlerLayout) {}
+        override suspend fun setOpenCleaned(enabled: Boolean) {}
     }
 
     private class FakeHandlerPrefs : com.dav3.linksentry.domain.repository.HandlerPrefsRepository {
         val uses = mutableListOf<Pair<String, String>>()
+        var cleared = false
+        val clearedKeys = mutableListOf<String>()
         override fun observeAll() = MutableStateFlow(
-            uses.map { com.dav3.linksentry.domain.system.HandlerUsage(it.first, it.second, 1, 0) },
+            // Model Room's DELETE: cleared keys no longer appear.
+            uses.filter { it.first !in clearedKeys }
+                .map { com.dav3.linksentry.domain.system.HandlerUsage(it.first, it.second, 1, 0) },
         )
         override suspend fun forKey(key: String) = emptyList<com.dav3.linksentry.domain.system.HandlerUsage>()
         override suspend fun recordUse(key: String, pkg: String) {
             uses.add(key to pkg)
         }
         override suspend fun forget(key: String, pkg: String) {}
+        override suspend fun clearAll() {
+            cleared = true
+        }
+        override suspend fun clearKey(key: String) {
+            clearedKeys.add(key)
+        }
     }
 
     private class FakeRoleChecker(var held: Boolean = false) : BrowserRoleChecker {
@@ -155,7 +166,12 @@ class InspectViewModelTest {
         state as InspectUiState.Inspect
         assertEquals("evil.com", state.facts.host)
         assertEquals(Severity.DANGER, state.verdict.worst)
-        assertEquals(2, state.handlers.size)
+        // 2 real handlers + 2 pseudo copy entries riding along.
+        assertEquals(4, state.handlers.size)
+        assertEquals(
+            listOf("@copy", "@copy-cleaned"),
+            state.handlers.map { it.packageName }.filter { it.startsWith("@") },
+        )
         assertEquals(1, history.records.size)
         assertEquals(HistoryAction.INSPECTED, history.records.first().third)
     }
@@ -192,6 +208,72 @@ class InspectViewModelTest {
             listOf("domain:example.com", "scheme:https"),
             handlerPrefs.uses.map { it.first },
         )
+    }
+
+    @Test
+    fun toggle_keep_param_recomputes_cleanup() = runTest(dispatcher) {
+        val vm = vm()
+        vm.submitText("https://a.com/p?utm_source=x&id=2")
+        dispatcher.scheduler.advanceUntilIdle()
+        val st = vm.uiState.value as InspectUiState.Inspect
+        assertEquals("https://a.com/p?id=2", st.cleanup.url)
+        vm.toggleKeepParam("utm_source")
+        val st2 = vm.uiState.value as InspectUiState.Inspect
+        assertEquals("https://a.com/p?utm_source=x&id=2", st2.cleanup.url)
+        assertEquals(setOf("utm_source"), st2.keepParams)
+    }
+
+    @Test
+    fun toggle_open_cleaned_changes_open_target() = runTest(dispatcher) {
+        val vm = vm()
+        vm.submitText("https://a.com/p?utm_source=x&id=2")
+        dispatcher.scheduler.advanceUntilIdle()
+        val st = vm.uiState.value as InspectUiState.Inspect
+        assertFalse(st.openCleaned)
+        vm.openWith(chrome)
+        assertEquals("https://a.com/p?utm_source=x&id=2", actions.opened.first().second)
+        vm.toggleOpenCleaned()
+        vm.openWith(chrome)
+        assertEquals("https://a.com/p?id=2", actions.opened[1].second)
+    }
+
+    @Test
+    fun openWith_pseudo_copy_copies_and_records() = runTest(dispatcher) {
+        val vm = vm()
+        vm.submitText("https://a.com/p")
+        dispatcher.scheduler.advanceUntilIdle()
+        val copyEntry = (vm.uiState.value as InspectUiState.Inspect).handlers.first { it.packageName == "@copy" }
+        vm.openWith(copyEntry)
+        dispatcher.scheduler.advanceUntilIdle()
+        // No app launched, no OPENED_WITH history — it's a copy action.
+        assertEquals(0, actions.opened.size)
+        assertEquals(1, history.records.count { it.third == HistoryAction.COPIED })
+        assertEquals(listOf("pseudo:a.com" to "@copy"), handlerPrefs.uses)
+    }
+
+    @Test
+    fun most_used_copy_entry_floats_to_top() = runTest(dispatcher) {
+        handlerPrefs.uses.add("pseudo:a.com" to "@copy-cleaned")
+        val vm = vm()
+        vm.submitText("https://a.com/p")
+        dispatcher.scheduler.advanceUntilIdle()
+        val first = (vm.uiState.value as InspectUiState.Inspect).handlers.first()
+        assertEquals("@copy-cleaned", first.packageName)
+    }
+
+    @Test
+    fun resetDomainSorting_clears_and_reranks() = runTest(dispatcher) {
+        handlerPrefs.uses.add("domain:a.com" to "com.google.android.youtube")
+        val vm = vm()
+        vm.submitText("https://a.com/p")
+        dispatcher.scheduler.advanceUntilIdle()
+        assertEquals("com.google.android.youtube", (vm.uiState.value as InspectUiState.Inspect).handlers.first().packageName)
+        vm.resetDomainSorting()
+        dispatcher.scheduler.advanceUntilIdle()
+        assertEquals(listOf("domain:a.com", "pseudo:a.com"), handlerPrefs.clearedKeys)
+        // After clearing, ranking falls back to browsers-first alpha.
+        val first = (vm.uiState.value as InspectUiState.Inspect).handlers.first { !it.packageName.startsWith("@") }
+        assertEquals("com.android.chrome", first.packageName)
     }
 
     @Test

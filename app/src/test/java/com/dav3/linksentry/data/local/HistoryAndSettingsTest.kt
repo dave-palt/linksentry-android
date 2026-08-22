@@ -99,10 +99,12 @@ class HistoryAndSettingsTest {
         repo.setRecordHistory(false)
         repo.setRetentionDays(null)
         repo.setTheme(ThemeMode.DARK)
+        repo.setHandlerLayout(com.dav3.linksentry.domain.model.HandlerLayout.GRID)
         s = repo.settings.first()
         assertEquals(false, s.recordHistory)
         assertEquals(null, s.retentionDays)
         assertEquals(ThemeMode.DARK, s.theme)
+        assertEquals(com.dav3.linksentry.domain.model.HandlerLayout.GRID, s.handlerLayout)
     }
 
     // ---------- fakes ----------
@@ -146,5 +148,7 @@ class HistoryAndSettingsTest {
         }
 
         override suspend fun setHandlerLayout(layout: com.dav3.linksentry.domain.model.HandlerLayout) {}
+
+        override suspend fun setOpenCleaned(enabled: Boolean) {}
     }
 }

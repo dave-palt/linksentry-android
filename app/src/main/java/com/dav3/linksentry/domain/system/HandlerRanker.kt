@@ -21,9 +21,14 @@ object HandlerRanker {
 
     private const val DOMAIN_PREFIX = "domain:"
     private const val SCHEME_PREFIX = "scheme:"
+    private const val PSEUDO_PREFIX = "pseudo:"
 
     fun domainKey(host: String): String = DOMAIN_PREFIX + host.lowercase()
     fun schemeKey(scheme: String): String = SCHEME_PREFIX + scheme.lowercase()
+
+    /** Usage key for pseudo entries (copy actions) — scoped per domain so
+     *  "copy" on github.com doesn't float to the top on paypal.com. */
+    fun pseudoKey(host: String): String = PSEUDO_PREFIX + host.lowercase()
 
     fun rank(
         handlers: List<HandlerApp>,

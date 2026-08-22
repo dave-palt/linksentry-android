@@ -1,5 +1,6 @@
 package com.dav3.linksentry.domain.analyze
 
+import com.dav3.linksentry.domain.model.CleanupCategory
 import com.dav3.linksentry.domain.model.Severity.DANGER
 import com.dav3.linksentry.domain.model.Severity.INFO
 import com.dav3.linksentry.domain.model.Severity.WARN
@@ -239,6 +240,42 @@ class UrlAnalyzerTest {
     fun `cleanedUrl on clean URL is identity`() {
         val url = "https://example.com/a/b?q=1"
         assertEquals(url, UrlAnalyzer.cleanedUrl(UrlAnalyzer.parse(url)))
+    }
+
+    @Test
+    fun `cleanup lists every removal with category`() {
+        val c = UrlAnalyzer.cleanup(UrlAnalyzer.parse("https://u:pw@a.com/p?utm_source=x&id=2&fbclid=z"))
+        assertEquals("https://a.com/p?id=2", c.url)
+        assertEquals(
+            listOf(CleanupCategory.CREDENTIALS, CleanupCategory.TRACKING_PARAM, CleanupCategory.TRACKING_PARAM),
+            c.removals.map { it.category },
+        )
+        assertEquals(listOf("u:pw", "utm_source", "fbclid"), c.removals.map { it.token })
+    }
+
+    @Test
+    fun `cleanup keepParams keeps opted-in tracking param`() {
+        val c = UrlAnalyzer.cleanup(
+            UrlAnalyzer.parse("https://a.com/p?utm_source=x&id=2"),
+            keepParams = setOf("utm_source"),
+        )
+        assertEquals("https://a.com/p?utm_source=x&id=2", c.url)
+        // Still listed as a removal (it IS tracking), but kept by user choice.
+        assertEquals(1, c.removals.size)
+    }
+
+    @Test
+    fun `cleanup keepCredentials restores userinfo`() {
+        val c = UrlAnalyzer.cleanup(UrlAnalyzer.parse("https://u:pw@a.com/p"), keepCredentials = true)
+        assertEquals("https://u:pw@a.com/p", c.url)
+        assertEquals(1, c.removals.size)
+    }
+
+    @Test
+    fun `cleanup on clean URL removes nothing`() {
+        val c = UrlAnalyzer.cleanup(UrlAnalyzer.parse("https://a.com/p?id=2"))
+        assertEquals("https://a.com/p?id=2", c.url)
+        assertTrue(c.removals.isEmpty())
     }
 
     // ---------- verdict aggregation ----------

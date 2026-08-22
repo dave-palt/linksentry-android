@@ -106,7 +106,40 @@ enum class HandlerLayout {
     GRID,
 }
 
+/** What a cleanup step targets. Drives coloring in the UI. */
+enum class CleanupCategory {
+    /** user:pass@ embedded in the URL */
+    CREDENTIALS,
+
+    /** utm_* / fbclid / … tracking parameters */
+    TRACKING_PARAM,
+}
+
+/** One thing the cleaner would strip from the URL. */
+data class UrlRemoval(
+    val category: CleanupCategory,
+    /** Short token: param name, or the userinfo string. */
+    val token: String,
+    /** Human explanation. */
+    val detail: String,
+)
+
+/** Result of cleaning a URL: the cleaned string + everything that was removed. */
+data class LinkCleanup(
+    val url: String,
+    val removals: List<UrlRemoval>,
+)
+
+/** Package names of pseudo entries in the handler list (copy actions). */
+object PseudoHandler {
+    /** Impossible as a real package name ('@' is invalid in package names). */
+    const val COPY = "@copy"
+    const val COPY_CLEANED = "@copy-cleaned"
+}
+
 data class AppSettings(
+    /** Handlers open the cleaned URL when enabled. */
+    val openCleaned: Boolean = false,
     val recordHistory: Boolean = true,
     /** null = keep forever */
     val retentionDays: Int? = 30,
