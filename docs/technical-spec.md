@@ -81,7 +81,7 @@ pre-release on push). PRs targeting `main` also run the checks.
 `SIGNING_KEYSTORE_BASE64` secret, runs unit tests, builds signed
 `bundleRelease` + `assembleRelease`, re-runs the security guardrails against
 the **release** merged manifest, uploads AAB/APK artifacts (90 days), and
-publishes a GitHub Release tagged `v<versionName>` with the APK + AAB.
+publishes a GitHub Release tagged `v<versionName>` with `LinkSentry-v<versionName>.apk` + `.aab`.
 
 Signing secrets: `SIGNING_KEYSTORE_BASE64` (the `.jks`, base64),
 `SIGNING_STORE_PASSWORD`, `SIGNING_KEY_ALIAS`, `SIGNING_KEY_PASSWORD`.
