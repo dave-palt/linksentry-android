@@ -62,7 +62,26 @@ fun SettingsScreen(
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val settings by viewModel.settings.collectAsState()
+    SettingsContent(
+        settings = settings,
+        isDefaultBrowser = isDefaultBrowser,
+        onSetRecordHistory = viewModel::setRecordHistory,
+        onSetRetention = viewModel::setRetentionDays,
+        onSetTheme = viewModel::setTheme,
+        onOpenDefaultAppsSettings = viewModel::openDefaultAppsSettings,
+    )
+}
 
+/** State-driven body — no ViewModel, previewable and screenshot-testable. */
+@Composable
+fun SettingsContent(
+    settings: AppSettings,
+    isDefaultBrowser: Boolean,
+    onSetRecordHistory: (Boolean) -> Unit,
+    onSetRetention: (Int?) -> Unit,
+    onSetTheme: (ThemeMode) -> Unit,
+    onOpenDefaultAppsSettings: () -> Unit,
+) {
     Column(
         Modifier
             .fillMaxWidth()
@@ -87,7 +106,7 @@ fun SettingsScreen(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                OutlinedButton(onClick = viewModel::openDefaultAppsSettings) {
+                OutlinedButton(onClick = onOpenDefaultAppsSettings) {
                     Text(if (isDefaultBrowser) "Change default browser" else "Set as default browser")
                 }
             }
@@ -106,17 +125,17 @@ fun SettingsScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            Switch(checked = settings.recordHistory, onCheckedChange = viewModel::setRecordHistory)
+            Switch(checked = settings.recordHistory, onCheckedChange = onSetRecordHistory)
         }
 
         if (settings.recordHistory) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Keep history for", style = MaterialTheme.typography.bodyLarge)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    RetentionChip("1 day", 1, settings, viewModel)
-                    RetentionChip("7 days", 7, settings, viewModel)
-                    RetentionChip("30 days", 30, settings, viewModel)
-                    RetentionChip("Forever", null, settings, viewModel)
+                    RetentionChip("1 day", 1, settings, onSetRetention)
+                    RetentionChip("7 days", 7, settings, onSetRetention)
+                    RetentionChip("30 days", 30, settings, onSetRetention)
+                    RetentionChip("Forever", null, settings, onSetRetention)
                 }
             }
         }
@@ -124,9 +143,9 @@ fun SettingsScreen(
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Theme", style = MaterialTheme.typography.bodyLarge)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ThemeChip("System", ThemeMode.SYSTEM, settings, viewModel)
-                ThemeChip("Light", ThemeMode.LIGHT, settings, viewModel)
-                ThemeChip("Dark", ThemeMode.DARK, settings, viewModel)
+                ThemeChip("System", ThemeMode.SYSTEM, settings, onSetTheme)
+                ThemeChip("Light", ThemeMode.LIGHT, settings, onSetTheme)
+                ThemeChip("Dark", ThemeMode.DARK, settings, onSetTheme)
             }
         }
     }
@@ -137,11 +156,11 @@ private fun RetentionChip(
     label: String,
     days: Int?,
     settings: AppSettings,
-    vm: SettingsViewModel,
+    onSetRetention: (Int?) -> Unit,
 ) {
     FilterChip(
         selected = settings.retentionDays == days,
-        onClick = { vm.setRetentionDays(days) },
+        onClick = { onSetRetention(days) },
         label = { Text(label) },
     )
 }
@@ -151,11 +170,11 @@ private fun ThemeChip(
     label: String,
     mode: ThemeMode,
     settings: AppSettings,
-    vm: SettingsViewModel,
+    onSetTheme: (ThemeMode) -> Unit,
 ) {
     FilterChip(
         selected = settings.theme == mode,
-        onClick = { vm.setTheme(mode) },
+        onClick = { onSetTheme(mode) },
         label = { Text(label) },
     )
 }

@@ -20,6 +20,7 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -191,5 +192,16 @@ class InspectViewModelTest {
         dispatcher.scheduler.advanceUntilIdle()
         vm.share()
         assertEquals("https://a.com/p?utm_source=x", actions.shared)
+    }
+
+    @Test
+    fun refreshRole_picks_up_role_change() = runTest(dispatcher) {
+        val vm = vm()
+        // Not default initially.
+        assertFalse((vm.uiState.value as InspectUiState.Manual).isDefaultBrowser)
+        // User grants the role in system settings, then returns to the app.
+        role.held = true
+        vm.refreshRole()
+        assertTrue((vm.uiState.value as InspectUiState.Manual).isDefaultBrowser)
     }
 }

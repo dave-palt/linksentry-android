@@ -70,8 +70,10 @@ jobs:
           key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle.kts', 'gradle/libs.versions.toml') }}
           restore-keys: gradle-${{ runner.os }}-
 
-      - name: Unit tests
-        run: ./gradlew testDebugUnitTest --no-daemon
+      # Unit tests + screenshot verification (Roborazzi compares against
+      # committed baselines in app/src/test/resources/roborazzi)
+      - name: Unit + screenshot tests
+        run: ./gradlew testDebugUnitTest --no-daemon --no-configuration-cache
 
       - name: Build debug APK
         # Debug APK is signed with the committed app/debug.keystore

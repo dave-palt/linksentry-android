@@ -64,6 +64,20 @@ fun HistoryScreen(
     viewModel: HistoryViewModel = hiltViewModel(),
 ) {
     val records by viewModel.records.collectAsState()
+    HistoryContent(
+        records = records,
+        onReinspect = onReinspect,
+        onClear = viewModel::clear,
+    )
+}
+
+/** State-driven body — no ViewModel, previewable and screenshot-testable. */
+@Composable
+fun HistoryContent(
+    records: List<LinkRecord>,
+    onReinspect: (String) -> Unit,
+    onClear: () -> Unit,
+) {
     var showClearDialog by remember { mutableStateOf(false) }
 
     Column(Modifier.fillMaxSize()) {
@@ -114,7 +128,7 @@ fun HistoryScreen(
             text = { Text("All inspected-link records will be deleted. This cannot be undone.") },
             confirmButton = {
                 TextButton(onClick = {
-                    viewModel.clear()
+                    onClear()
                     showClearDialog = false
                 }) { Text("Clear") }
             },
