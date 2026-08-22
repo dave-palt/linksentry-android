@@ -119,7 +119,9 @@ roborazzi {
                 "application" to "android.app.Application::class",
             )
     }
-    outputDir.set(file("build/outputs/roborazzi"))
+    // Baselines live in test resources → committed to git, verified in CI.
+    // (Roborazzi resolves actual/expected paths relative to this dir.)
+    outputDir.set(file("src/test/resources/roborazzi"))
 }
 
 dependencies {
