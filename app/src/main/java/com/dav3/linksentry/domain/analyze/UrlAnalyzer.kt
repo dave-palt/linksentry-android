@@ -1,6 +1,8 @@
 package com.dav3.linksentry.domain.analyze
 
 import com.dav3.linksentry.domain.model.Analysis
+import com.dav3.linksentry.domain.model.CleanupCategory
+import com.dav3.linksentry.domain.model.LinkCleanup
 import com.dav3.linksentry.domain.model.RiskSignal
 import com.dav3.linksentry.domain.model.Severity
 import com.dav3.linksentry.domain.model.Severity.DANGER
@@ -21,6 +23,7 @@ import com.dav3.linksentry.domain.model.SignalId.TRACKING_PARAMS
 import com.dav3.linksentry.domain.model.SignalId.VERY_LONG_URL
 import com.dav3.linksentry.domain.model.UrlFacts
 import com.dav3.linksentry.domain.model.UrlParam
+import com.dav3.linksentry.domain.model.UrlRemoval
 import com.dav3.linksentry.domain.model.Verdict
 import java.net.URLDecoder
 
@@ -245,11 +248,26 @@ object UrlAnalyzer {
 
     // ---------- cleaned URL ----------
 
-    /** URL with credentials stripped and tracking params removed. */
-    fun cleanedUrl(f: UrlFacts): String {
-        if (f.hasParseError) return f.raw
+    /**
+     * Everything the cleaner would strip, plus the URL with it all applied.
+     * `keepParams` / `keepCredentials` let the user opt back in per removal.
+     */
+    fun cleanup(
+        f: UrlFacts,
+        keepParams: Set<String> = emptySet(),
+        keepCredentials: Boolean = false,
+    ): LinkCleanup {
+        if (f.hasParseError) return LinkCleanup(f.raw, emptyList())
+        val removals = buildList {
+            if (f.userInfo != null) {
+                add(UrlRemoval(CleanupCategory.CREDENTIALS, f.userInfo, "Credentials embedded in the link"))
+            }
+            f.params.filter { isTracking(it.name) }.forEach {
+                add(UrlRemoval(CleanupCategory.TRACKING_PARAM, it.name, "Tracking parameter"))
+            }
+        }
         val portPart = if (f.port != -1) ":${f.port}" else ""
-        val kept = f.params.filterNot { isTracking(it.name) }
+        val kept = f.params.filterNot { isTracking(it.name) && it.name !in keepParams }
         val queryPart = if (kept.isEmpty()) {
             ""
         } else {
@@ -258,6 +276,19 @@ object UrlAnalyzer {
             }
         }
         val fragmentPart = if (f.fragment != null) "#${f.fragment}" else ""
-        return "${f.scheme}://${f.host}$portPart${f.path}$queryPart$fragmentPart"
+        val credPart = if (f.userInfo != null && !keepCredentials) {
+            ""
+        } else if (f.userInfo != null) {
+            "${f.userInfo}@"
+        } else {
+            ""
+        }
+        return LinkCleanup(
+            url = "${f.scheme}://$credPart${f.host}$portPart${f.path}$queryPart$fragmentPart",
+            removals = removals,
+        )
     }
+
+    /** URL with credentials stripped and tracking params removed. */
+    fun cleanedUrl(f: UrlFacts): String = cleanup(f).url
 }

@@ -19,4 +19,10 @@ interface HandlerPrefDao {
 
     @Query("DELETE FROM handler_prefs WHERE `key` = :key AND packageName = :pkg")
     suspend fun delete(key: String, pkg: String)
+
+    @Query("DELETE FROM handler_prefs")
+    suspend fun clearAll()
+
+    @Query("DELETE FROM handler_prefs WHERE `key` = :key")
+    suspend fun clearKey(key: String)
 }

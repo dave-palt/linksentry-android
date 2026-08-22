@@ -66,6 +66,10 @@ fun InspectScreen(
             onOpenBrowserSettings = viewModel::openBrowserSettings,
             onInspectNew = onInspectNew,
             handlerLayout = handlerLayout,
+            onToggleKeepParam = viewModel::toggleKeepParam,
+            onToggleKeepCredentials = viewModel::toggleKeepCredentials,
+            onToggleOpenCleaned = viewModel::toggleOpenCleaned,
+            onResetSorting = viewModel::resetDomainSorting,
             modifier = Modifier.padding(padding),
         )
     }
