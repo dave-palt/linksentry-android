@@ -35,12 +35,12 @@ class MainActivity : ComponentActivity() {
         pendingUrl.value = intentUrl(intent)
 
         setContent {
-            val themeMode by settingsRepository.settings
-                .collectAsState(initial = com.dav3.linksentry.domain.model.AppSettings())
-                .let { androidx.compose.runtime.derivedStateOf { it.value.theme } }
+            val appSettings by settingsRepository.settings.collectAsState(
+                initial = com.dav3.linksentry.domain.model.AppSettings(),
+            )
 
             LinkSentryTheme(
-                darkTheme = when (themeMode) {
+                darkTheme = when (appSettings.theme) {
                     ThemeMode.DARK -> true
                     ThemeMode.LIGHT -> false
                     ThemeMode.SYSTEM -> androidx.compose.foundation.isSystemInDarkTheme()
