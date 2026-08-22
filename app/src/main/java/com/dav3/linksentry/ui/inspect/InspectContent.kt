@@ -1,17 +1,22 @@
 package com.dav3.linksentry.ui.inspect
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Warning
@@ -27,6 +32,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -51,6 +57,8 @@ fun InspectContent(
     onManualInput: (String) -> Unit,
     onSubmitManual: () -> Unit = {},
     onOpenBrowserSettings: () -> Unit = {},
+    onInspectNew: () -> Unit = {},
+    handlerLayout: com.dav3.linksentry.domain.model.HandlerLayout = com.dav3.linksentry.domain.model.HandlerLayout.LIST,
     modifier: Modifier = Modifier,
 ) {
     when (state) {
@@ -62,6 +70,8 @@ fun InspectContent(
             onCopyCleaned,
             onShare,
             onReinspect,
+            onInspectNew,
+            handlerLayout,
             modifier,
         )
         is InspectUiState.Invalid -> InvalidContent(state, onReinspect, modifier)
@@ -127,6 +137,8 @@ private fun InspectedContent(
     onCopyCleaned: () -> Unit,
     onShare: () -> Unit,
     onReinspect: () -> Unit,
+    onInspectNew: () -> Unit = {},
+    handlerLayout: com.dav3.linksentry.domain.model.HandlerLayout = com.dav3.linksentry.domain.model.HandlerLayout.LIST,
     modifier: Modifier = Modifier,
 ) {
     LazyColumn(
@@ -134,6 +146,17 @@ private fun InspectedContent(
         contentPadding = androidx.compose.foundation.layout.PaddingValues(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
+        item {
+            OutlinedButton(onClick = onInspectNew, modifier = Modifier.fillMaxWidth()) {
+                Icon(
+                    Icons.Filled.Add,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                )
+                Spacer(Modifier.width(6.dp))
+                Text("Inspect another link")
+            }
+        }
         item { HostHeader(state) }
         item { VerdictCard(state) }
         if (state.verdict.signals.isNotEmpty()) {
@@ -171,7 +194,11 @@ private fun InspectedContent(
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 }
-                state.handlers.forEach { app -> HandlerRow(app, onClick = { onOpenApp(app) }) }
+                if (handlerLayout == com.dav3.linksentry.domain.model.HandlerLayout.GRID) {
+                    HandlerGrid(state.handlers, onOpenApp)
+                } else {
+                    state.handlers.forEach { app -> HandlerRow(app, onClick = { onOpenApp(app) }) }
+                }
             }
         }
         item {
@@ -324,6 +351,8 @@ private fun HandlerRow(app: HandlerApp, onClick: () -> Unit) {
             Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            AppIcon(app)
+            Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(app.label, style = MaterialTheme.typography.bodyLarge)
                 Text(
@@ -335,6 +364,70 @@ private fun HandlerRow(app: HandlerApp, onClick: () -> Unit) {
             if (app.isBrowser) {
                 AssistChip(onClick = onClick, label = { Text("Browser") })
             }
+        }
+    }
+}
+
+/** Launcher-style grid cell: big icon, small label underneath. */
+@Composable
+private fun HandlerGridCell(app: HandlerApp, onClick: () -> Unit) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(vertical = 12.dp, horizontal = 4.dp)
+            .fillMaxWidth(),
+    ) {
+        AppIcon(app, size = 48.dp)
+        Spacer(Modifier.height(8.dp))
+        Text(
+            app.label,
+            style = MaterialTheme.typography.labelMedium,
+            maxLines = 1,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
+private fun HandlerGrid(apps: List<HandlerApp>, onOpenApp: (HandlerApp) -> Unit) {
+    // Fixed 4-column launcher grid.
+    androidx.compose.foundation.layout.FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        apps.forEach { app ->
+            Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                HandlerGridCell(app, onClick = { onOpenApp(app) })
+            }
+        }
+    }
+}
+
+/** App icon with a safe placeholder when the drawable is missing. */
+@Composable
+private fun AppIcon(app: HandlerApp, size: androidx.compose.ui.unit.Dp = 28.dp) {
+    if (app.icon != null) {
+        androidx.compose.ui.viewinterop.AndroidView(
+            factory = { ctx -> android.widget.ImageView(ctx).apply { layoutParams = android.view.ViewGroup.LayoutParams(28, 28) } },
+            update = { it.setImageDrawable(app.icon) },
+            modifier = Modifier.size(size),
+        )
+    } else {
+        Surface(
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            shape = androidx.compose.foundation.shape.CircleShape,
+            modifier = Modifier.size(size),
+        ) {
+            Icon(
+                Icons.Filled.OpenInNew,
+                contentDescription = null,
+                modifier = Modifier
+                    .padding(6.dp)
+                    .size(size / 2),
+            )
         }
     }
 }

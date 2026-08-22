@@ -49,7 +49,9 @@ class FakeSettingsRepo(initial: AppSettings = AppSettings()) : SettingsRepositor
 
     override suspend fun setRetentionDays(days: Int?) = Unit
 
-    override suspend fun setTheme(mode: ThemeMode) = Unit
+    override suspend fun setTheme(mode: com.dav3.linksentry.domain.model.ThemeMode) = Unit
+
+    override suspend fun setHandlerLayout(layout: com.dav3.linksentry.domain.model.HandlerLayout) = Unit
 }
 
 class FakeRoleChecker(private val isDefault: Boolean = true) : BrowserRoleChecker {

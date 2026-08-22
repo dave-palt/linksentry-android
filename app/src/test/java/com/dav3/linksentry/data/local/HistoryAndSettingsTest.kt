@@ -144,5 +144,7 @@ class HistoryAndSettingsTest {
         override suspend fun setTheme(mode: ThemeMode) {
             s = s.copy(theme = mode)
         }
+
+        override suspend fun setHandlerLayout(layout: com.dav3.linksentry.domain.model.HandlerLayout) {}
     }
 }

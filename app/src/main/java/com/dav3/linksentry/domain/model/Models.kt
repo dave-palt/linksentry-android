@@ -72,6 +72,8 @@ data class HandlerApp(
     val label: String,
     /** True if this app is a general web browser (wildcard-host handler). */
     val isBrowser: Boolean,
+    /** App icon as an Android [Drawable] (may be adaptive); null on failure. */
+    val icon: android.graphics.drawable.Drawable? = null,
 )
 
 /** What the user did with an inspected link (history record). */
@@ -98,9 +100,16 @@ enum class ThemeMode {
     DARK,
 }
 
+/** How the "Open with" handler picker is laid out. */
+enum class HandlerLayout {
+    LIST,
+    GRID,
+}
+
 data class AppSettings(
     val recordHistory: Boolean = true,
     /** null = keep forever */
     val retentionDays: Int? = 30,
     val theme: ThemeMode = ThemeMode.SYSTEM,
+    val handlerLayout: HandlerLayout = HandlerLayout.LIST,
 )

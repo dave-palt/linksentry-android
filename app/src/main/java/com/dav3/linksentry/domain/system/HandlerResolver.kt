@@ -60,6 +60,7 @@ class DefaultHandlerResolver @Inject constructor(
                     activityName = it.name,
                     label = it.loadLabel(pm).toString(),
                     isBrowser = it.packageName in browserPkgs,
+                    icon = runCatching { it.loadIcon(pm) }.getOrNull(),
                 )
             }
             .sortedWith(

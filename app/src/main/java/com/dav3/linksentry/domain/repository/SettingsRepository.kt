@@ -11,4 +11,6 @@ interface SettingsRepository {
     suspend fun setRetentionDays(days: Int?)
 
     suspend fun setTheme(mode: com.dav3.linksentry.domain.model.ThemeMode)
+
+    suspend fun setHandlerLayout(layout: com.dav3.linksentry.domain.model.HandlerLayout)
 }
