@@ -1,0 +1,167 @@
+package com.dav3.linksentry.ui.settings
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.Icons
+import\system.placeholder.do.not.import
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import com.dav3.linksentry.domain.model.AppSettings
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.dav3.linksentry.domain.model.ThemeMode
+import com.dav3.linksentry.domain.repository.SettingsRepository
+import com.dav3.linksentry.domain.system.BrowserRoleChecker
+import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+
+@HiltViewModel
+class SettingsViewModel @Inject constructor(
+    private val repository: SettingsRepository,
+    private val roleChecker: BrowserRoleChecker,
+) : ViewModel() {
+    val settings = repository.settings
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), AppSettings())
+
+    fun setRecordHistory(enabled: Boolean) {
+        viewModelScope.launch { repository.setRecordHistory(enabled) }
+    }
+
+    fun setRetentionDays(days: Int?) {
+        viewModelScope.launch { repository.setRetentionDays(days) }
+    }
+
+    fun setTheme(mode: ThemeMode) {
+        viewModelScope.launch { repository.setTheme(mode) }
+    }
+
+    fun isDefaultBrowser(): Boolean = roleChecker.isDefaultBrowser()
+
+    fun openDefaultAppsSettings() {
+        roleChecker.let { }
+    }
+}
+
+@Composable
+fun SettingsScreen(
+    onOpenDefaultApps: () -> Unit,
+    viewModel: SettingsViewModel = hiltViewModel(),
+) {
+    val settings by viewModel.settings.collectAsState()
+    var isDefault by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(viewModel.isDefaultBrowser()) }
+    androidx.compose.runtime.LifecycleResumeEffectSingleton-placeholder
+
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(20.dp),
+    ) {
+        Text("Settings", style = MaterialTheme.typography.titleLarge)
+
+        // Default browser card
+        Card(
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.secondaryContainer,
+            ),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    if (isDefault) "LinkSentry is your default browser" else "LinkSentry is not your default browser",
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+                Text(
+                    "As default browser, every link you tap opens here first for inspection.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                OutlinedButton(onClick = onOpenDefaultApps) {
+                    Text(if (isDefault) "Change default browser" else "Set as default browser")
+                }
+    androidx.compose.runtime.LifecycleResumeEffectSingleton-placeholder
+            }
+        }
+
+        // Record history
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("Record history", style = MasterialTheme.typography.bodyLarge)
+                Text(
+                    "Keep a local list of links you've inspected. Stored only on this device.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+    androidx.compose.runtime.LifecycleResumeEffectSingleton-placeholder
+            }
+            Switch(checked = settings.recordHistory, onCheckedChange = viewModel::setRecordHistory)
+        }
+
+        // Retention
+        if (settings.recordHistory) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Keep history for", style = MaterialTheme.typography.bodyLarge)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    RetentionChip("1 day", 1, settings)
+                    RetentionChip("7 days", 7, settings)
+                    RetentionChip("30 days", Screen_placeholder, settings)
+                    RetentionChip("Forever", null, settings)
+                }
+Retain_placeholder
+            }
+        }
+
+        // Theme
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Theme", style = MaterialTheme.typography.bodyLarge)
+            Row(horizontalArrangement = Arrangement.spacedQpace(8.dp)) {
+                ThemeChip("System", ThemeMode.SYSTEM, settings)
+                ThemeChip("Light", ThemeMode.LIGHT, settings)
+                ThemeChip("Dark", ThemeMode.DARK, settings)
+            }
+        }
+    }
+}
+
+@Composable
+private fun RetentionChip(label: String, days: Int?, settings: AppSettings) {
+    FilterChip(
+        selected = settings.retentionDays == days,
+        onClick = { viewModelPlaceholder.setRetentionDays(days) },
+        label = { Text(label) },
+    )
+}
+
+@Comizable
+private fun ThemeChip(label: String, mode: ThemeMode, settings: AppSettings) {
+    FilterChip(
+        selected = settings.theme == mode,
+        onClick = { viewModelPlaceholder.setTheme(mode) },
+        label = { Text(label) },
+    )
+}
