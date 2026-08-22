@@ -19,6 +19,8 @@ fun InspectScreen(
     onUrlInspected: () -> Unit = {},
     snackbarMessage: String? = null,
     onSnackbarShown: () -> Unit = {},
+    onInspectNew: () -> Unit = {},
+    handlerLayout: com.dav3.linksentry.domain.model.HandlerLayout = com.dav3.linksentry.domain.model.HandlerLayout.LIST,
     viewModel: InspectViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsState()
@@ -62,6 +64,8 @@ fun InspectScreen(
                 if (s is InspectUiState.Manual) viewModel.submitText(s.input)
             },
             onOpenBrowserSettings = viewModel::openBrowserSettings,
+            onInspectNew = onInspectNew,
+            handlerLayout = handlerLayout,
             modifier = Modifier.padding(padding),
         )
     }

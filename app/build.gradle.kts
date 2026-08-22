@@ -15,7 +15,7 @@ android {
         minSdk = 26
         targetSdk = 37
         versionCode = (System.currentTimeMillis() / 1000).toInt()
-        versionName = "1.0.1"
+        versionName = "1.1.0"
 
         // Git SHA for build traceability (config-cache safe)
         buildConfigField(

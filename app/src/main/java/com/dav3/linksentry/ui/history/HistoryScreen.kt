@@ -113,7 +113,10 @@ fun HistoryContent(
                 )
             }
         } else {
-            LazyColumn(contentPadding = androidx.compose.foundation.layout.PaddingValues(20.dp)) {
+            LazyColumn(
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(20.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
                 items(records, key = { it.id }) { record ->
                     HistoryRow(record, onClick = { onReinspect(record.url) })
                 }
@@ -153,13 +156,13 @@ private fun HistoryRow(record: LinkRecord, onClick: () -> Unit) {
             ) {}
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text(record.host, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+                Text(record.host, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
                 Text(
                     record.url,
-                    style = MaterialTheme.typography.bodySmall,
+                    style = MaterialTheme.typography.labelSmall,
                     fontFamily = FontFamily.Monospace,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
+                    maxLines = 2,
                     overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                 )
             }

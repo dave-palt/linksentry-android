@@ -23,6 +23,7 @@ class SettingsRepositoryImpl @Inject constructor(
         val RECORD_HISTORY = booleanPreferencesKey("record_history")
         val RETENTION_DAYS = intPreferencesKey("retention_days")
         val THEME = stringPreferencesKey("theme")
+        val HANDLER_LAYOUT = stringPreferencesKey("handler_layout")
     }
 
     private val dataStore = context.appDataStore
@@ -55,5 +56,9 @@ class SettingsRepositoryImpl @Inject constructor(
 
     override suspend fun setTheme(mode: ThemeMode) {
         dataStore.edit { it[Keys.THEME] = mode.name }
+    }
+
+    override suspend fun setHandlerLayout(layout: com.dav3.linksentry.domain.model.HandlerLayout) {
+        dataStore.edit { it[Keys.HANDLER_LAYOUT] = layout.name }
     }
 }

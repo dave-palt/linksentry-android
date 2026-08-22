@@ -20,6 +20,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -28,15 +29,19 @@ import androidx.navigation.compose.rememberNavController
 import com.dav3.linksentry.domain.system.BrowserRoleChecker
 import com.dav3.linksentry.ui.history.HistoryScreen
 import com.dav3.linksentry.ui.inspect.InspectScreen
+import com.dav3.linksentry.ui.inspect.NewUrlScreen
 import com.dav3.linksentry.ui.settings.SettingsScreen
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.stateIn
 import javax.inject.Inject
 
 object Dest {
     const val INSPECT = "inspect"
+    const val NEW_URL = "inspect/new"
     const val HISTORY = "history"
     const val SETTINGS = "settings"
 }
@@ -63,52 +68,60 @@ fun LinkSentryNavHost(
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
 
-    // Pending URL to inspect: consumed by InspectScreen exactly once.
-    var pendingUrl by remember { mutableStateOf(initialUrl) }
-    val roleVm: RoleViewModel = hiltViewModel()
+    // Handler-picker layout (list vs grid) comes from app settings.
+    val settingsVm: SettingsNavViewModel = hiltViewModel()
+    val appSettings by settingsVm.settings.collectAsState()
 
-    LaunchedEffect(Unit) {
+    // Pending URL to inspect: consumed by InspectScreen exactly once.
+    // `initialUrl` can change at any time (warm start via onNewIntent while
+    // the NavHost is already composed) — follow it instead of capturing it.
+    var pendingUrl by remember { mutableStateOf(initialUrl) }
+    LaunchedEffect(initialUrl) {
         if (initialUrl != null) {
+            pendingUrl = initialUrl
             navController.navigate(Dest.INSPECT) { launchSingleTop = true }
         }
     }
+    val roleVm: RoleViewModel = hiltViewModel()
 
     Scaffold(
         bottomBar = {
-            NavigationBar {
-                NavigationBarItem(
-                    icon = { Icon(Icons.Filled.Search, contentDescription = null) },
-                    label = { Text("Inspect") },
-                    selected = currentRoute == Dest.INSPECT,
-                    onClick = {
-                        navController.navigate(Dest.INSPECT) {
-                            popUpTo(Dest.INSPECT) { inclusive = false }
-                            launchSingleTop = true
-                        }
-                    },
-                )
-                NavigationBarItem(
-                    icon = { Icon(Icons.Filled.History, contentDescription = null) },
-                    label = { Text("History") },
-                    selected = currentRoute == Dest.HISTORY,
-                    onClick = {
-                        navController.navigate(Dest.HISTORY) {
-                            popUpTo(Dest.INSPECT) { inclusive = false }
-                            launchSingleTop = true
-                        }
-                    },
-                )
-                NavigationBarItem(
-                    icon = { Icon(Icons.Filled.Settings, contentDescription = null) },
-                    label = { Text("Settings") },
-                    selected = currentRoute == Dest.SETTINGS,
-                    onClick = {
-                        navController.navigate(Dest.SETTINGS) {
-                            popUpTo(Dest.INSPECT) { inclusive = false }
-                            launchSingleTop = true
-                        }
-                    },
-                )
+            if (currentRoute != Dest.NEW_URL) {
+                NavigationBar {
+                    NavigationBarItem(
+                        icon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                        label = { Text("Inspect") },
+                        selected = currentRoute == Dest.INSPECT,
+                        onClick = {
+                            navController.navigate(Dest.INSPECT) {
+                                popUpTo(Dest.INSPECT) { inclusive = false }
+                                launchSingleTop = true
+                            }
+                        },
+                    )
+                    NavigationBarItem(
+                        icon = { Icon(Icons.Filled.History, contentDescription = null) },
+                        label = { Text("History") },
+                        selected = currentRoute == Dest.HISTORY,
+                        onClick = {
+                            navController.navigate(Dest.HISTORY) {
+                                popUpTo(Dest.INSPECT) { inclusive = false }
+                                launchSingleTop = true
+                            }
+                        },
+                    )
+                    NavigationBarItem(
+                        icon = { Icon(Icons.Filled.Settings, contentDescription = null) },
+                        label = { Text("Settings") },
+                        selected = currentRoute == Dest.SETTINGS,
+                        onClick = {
+                            navController.navigate(Dest.SETTINGS) {
+                                popUpTo(Dest.INSPECT) { inclusive = false }
+                                launchSingleTop = true
+                            }
+                        },
+                    )
+                }
             }
         },
     ) { padding ->
@@ -124,6 +137,13 @@ fun LinkSentryNavHost(
                         pendingUrl = null
                         onUrlInspected()
                     },
+                    onInspectNew = { navController.navigate(Dest.NEW_URL) },
+                    handlerLayout = appSettings.handlerLayout,
+                )
+            }
+            composable(Dest.NEW_URL) {
+                NewUrlScreen(
+                    onSubmitted = { navController.popBackStack() },
                 )
             }
             composable(Dest.HISTORY) {
@@ -149,4 +169,12 @@ fun LinkSentryNavHost(
             }
         }
     }
+}
+
+@HiltViewModel
+class SettingsNavViewModel @Inject constructor(
+    settingsRepository: com.dav3.linksentry.domain.repository.SettingsRepository,
+) : ViewModel() {
+    val settings = settingsRepository.settings
+        .stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000), com.dav3.linksentry.domain.model.AppSettings())
 }

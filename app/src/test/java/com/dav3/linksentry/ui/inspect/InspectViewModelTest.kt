@@ -93,6 +93,19 @@ class InspectViewModelTest {
         override suspend fun setRecordHistory(enabled: Boolean) {}
         override suspend fun setRetentionDays(days: Int?) {}
         override suspend fun setTheme(mode: com.dav3.linksentry.domain.model.ThemeMode) {}
+        override suspend fun setHandlerLayout(layout: com.dav3.linksentry.domain.model.HandlerLayout) {}
+    }
+
+    private class FakeHandlerPrefs : com.dav3.linksentry.domain.repository.HandlerPrefsRepository {
+        val uses = mutableListOf<Pair<String, String>>()
+        override fun observeAll() = MutableStateFlow(
+            uses.map { com.dav3.linksentry.domain.system.HandlerUsage(it.first, it.second, 1, 0) },
+        )
+        override suspend fun forKey(key: String) = emptyList<com.dav3.linksentry.domain.system.HandlerUsage>()
+        override suspend fun recordUse(key: String, pkg: String) {
+            uses.add(key to pkg)
+        }
+        override suspend fun forget(key: String, pkg: String) {}
     }
 
     private class FakeRoleChecker(var held: Boolean = false) : BrowserRoleChecker {
@@ -113,6 +126,7 @@ class InspectViewModelTest {
         settingsRepo = FakeSettings()
         history = FakeHistory(settingsRepo)
         role = FakeRoleChecker()
+        handlerPrefs = FakeHandlerPrefs()
     }
 
     @After
@@ -120,7 +134,9 @@ class InspectViewModelTest {
         Dispatchers.resetMain()
     }
 
-    private fun vm() = InspectViewModel(resolver, actions, history, settingsRepo, role)
+    private lateinit var handlerPrefs: FakeHandlerPrefs
+
+    private fun vm() = InspectViewModel(resolver, actions, history, settingsRepo, role, handlerPrefs)
 
     @Test
     fun initial_state_is_Manual() = runTest(dispatcher) {
@@ -171,6 +187,21 @@ class InspectViewModelTest {
         assertEquals(1, actions.opened.size)
         assertEquals("com.android.chrome", actions.opened.first().first.packageName)
         assertEquals(1, history.records.count { it.third == HistoryAction.OPENED_WITH })
+        // Usage persisted for BOTH domain and scheme keys.
+        assertEquals(
+            listOf("domain:example.com", "scheme:https"),
+            handlerPrefs.uses.map { it.first },
+        )
+    }
+
+    @Test
+    fun prior_usage_floats_preferred_app_to_top() = runTest(dispatcher) {
+        handlerPrefs.uses.add("domain:example.com" to "com.google.android.youtube")
+        val vm = vm()
+        vm.submit(Uri.parse("https://example.com/"))
+        dispatcher.scheduler.advanceUntilIdle()
+        val state = vm.uiState.value as InspectUiState.Inspect
+        assertEquals("com.google.android.youtube", state.handlers.first().packageName)
     }
 
     @Test
@@ -203,5 +234,65 @@ class InspectViewModelTest {
         role.held = true
         vm.refreshRole()
         assertTrue((vm.uiState.value as InspectUiState.Manual).isDefaultBrowser)
+    }
+
+    @Test
+    fun submit_populates_inspect_input_with_url() = runTest(dispatcher) {
+        val vm = vm()
+        vm.submit(Uri.parse("https://example.com/p?id=2"))
+        dispatcher.scheduler.advanceUntilIdle()
+        val state = vm.uiState.value as InspectUiState.Inspect
+        assertEquals("https://example.com/p?id=2", state.input)
+    }
+
+    @Test
+    fun editing_input_in_Inspect_keeps_analysis_until_resubmit() = runTest(dispatcher) {
+        val vm = vm()
+        vm.submit(Uri.parse("https://example.com/p?id=2"))
+        dispatcher.scheduler.advanceUntilIdle()
+        // User edits the URL field — analysis stays live until they resubmit.
+        vm.onInputChange("https://example.com/other")
+        dispatcher.scheduler.advanceUntilIdle()
+        val state = vm.uiState.value
+        assertTrue(state is InspectUiState.Inspect)
+        state as InspectUiState.Inspect
+        assertEquals("https://example.com/other", state.input)
+        assertEquals("example.com", state.facts.host)
+    }
+
+    @Test
+    fun resubmitting_edited_input_reanalyses() = runTest(dispatcher) {
+        val vm = vm()
+        vm.submit(Uri.parse("https://example.com/p"))
+        dispatcher.scheduler.advanceUntilIdle()
+        vm.onInputChange("https://other.org/q")
+        vm.submitText("https://other.org/q")
+        dispatcher.scheduler.advanceUntilIdle()
+        val state = vm.uiState.value as InspectUiState.Inspect
+        assertEquals("other.org", state.facts.host)
+        assertEquals(2, history.records.size)
+    }
+
+    @Test
+    fun reset_keeps_input_when_valued() = runTest(dispatcher) {
+        val vm = vm()
+        vm.submit(Uri.parse("https://example.com/p"))
+        dispatcher.scheduler.advanceUntilIdle()
+        vm.reset()
+        val state = vm.uiState.value
+        assertTrue(state is InspectUiState.Manual)
+        assertEquals("https://example.com/p", (state as InspectUiState.Manual).input)
+    }
+
+    @Test
+    fun submit_while_Inspect_showing_replaces_analysis() = runTest(dispatcher) {
+        val vm = vm()
+        vm.submit(Uri.parse("https://example.com/p"))
+        dispatcher.scheduler.advanceUntilIdle()
+        // A second VIEW intent while results are on screen.
+        vm.submit(Uri.parse("http://***@evil.com/x"))
+        dispatcher.scheduler.advanceUntilIdle()
+        val state = vm.uiState.value as InspectUiState.Inspect
+        assertEquals("evil.com", state.facts.host)
     }
 }
