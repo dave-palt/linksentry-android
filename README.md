@@ -34,7 +34,7 @@ leaking a URL, or phoning home. This is enforced in CI.
 
 ## Install
 
-Grab the latest APK from [Releases]. Debug builds install side-by-side
+Grab the latest signed APK from [Releases]. Dev builds install side-by-side
 (`…debug` app id suffix, amber icon).
 
 ## Build
