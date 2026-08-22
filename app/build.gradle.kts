@@ -15,7 +15,7 @@ android {
         minSdk = 26
         targetSdk = 37
         versionCode = (System.currentTimeMillis() / 1000).toInt()
-        versionName = "0.1.0"
+        versionName = "1.0.1"
 
         // Git SHA for build traceability (config-cache safe)
         buildConfigField(
@@ -119,7 +119,9 @@ roborazzi {
                 "application" to "android.app.Application::class",
             )
     }
-    outputDir.set(file("build/outputs/roborazzi"))
+    // Baselines live in test resources → committed to git, verified in CI.
+    // (Roborazzi resolves actual/expected paths relative to this dir.)
+    outputDir.set(file("src/test/resources/roborazzi"))
 }
 
 dependencies {

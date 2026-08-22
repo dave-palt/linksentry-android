@@ -74,7 +74,20 @@ clear, count.
 
 `dev-build.yml` (PR/push → develop): lint job (spotless + lintDebug) and
 build job (testDebugUnitTest, assembleDebug, guardrails, APK artifact, dev
-pre-release on push). Prod release workflow: on `main`/tags (to be added).
+pre-release on push). PRs targeting `main` also run the checks.
+
+`prod-build.yml` (push → main, or manual dispatch): reads `versionName` from
+`app/build.gradle.kts`, decodes the signing keystore from the
+`SIGNING_KEYSTORE_BASE64` secret, runs unit tests, builds signed
+`bundleRelease` + `assembleRelease`, re-runs the security guardrails against
+the **release** merged manifest, uploads AAB/APK artifacts (90 days), and
+publishes a GitHub Release tagged `v<versionName>` with the APK + AAB.
+
+Signing secrets: `SIGNING_KEYSTORE_BASE64` (the `.jks`, base64),
+`SIGNING_STORE_PASSWORD`, `SIGNING_KEY_ALIAS`, `SIGNING_KEY_PASSWORD`.
+The keystore is PKCS12: store and key password are the same value. Local
+release builds read the same variables from a gitignored `local.env`.
+`app/release.jks` is gitignored — never commit it.
 
 ## Tests
 

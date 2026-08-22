@@ -12,6 +12,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -29,6 +30,9 @@ import com.dav3.linksentry.ui.history.HistoryScreen
 import com.dav3.linksentry.ui.inspect.InspectScreen
 import com.dav3.linksentry.ui.settings.SettingsScreen
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import javax.inject.Inject
 
 object Dest {
@@ -41,7 +45,13 @@ object Dest {
 class RoleViewModel @Inject constructor(
     private val roleChecker: BrowserRoleChecker,
 ) : ViewModel() {
-    fun isDefaultBrowser(): Boolean = roleChecker.isDefaultBrowser()
+    private val _isDefault = MutableStateFlow(roleChecker.isDefaultBrowser())
+    val isDefault: StateFlow<Boolean> = _isDefault.asStateFlow()
+
+    /** Re-query the browser role; called when the app regains focus. */
+    fun refresh() {
+        _isDefault.value = roleChecker.isDefaultBrowser()
+    }
 }
 
 @Composable
@@ -128,7 +138,14 @@ fun LinkSentryNavHost(
                 )
             }
             composable(Dest.SETTINGS) {
-                SettingsScreen(isDefaultBrowser = roleVm.isDefaultBrowser())
+                val isDefault by roleVm.isDefault.collectAsState()
+                // Refresh when the user returns from system default-browser
+                // settings — the composition itself won't re-run on resume.
+                androidx.lifecycle.compose.LifecycleResumeEffect(Unit) {
+                    roleVm.refresh()
+                    onPauseOrDispose { }
+                }
+                SettingsScreen(isDefaultBrowser = isDefault)
             }
         }
     }
