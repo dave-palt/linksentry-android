@@ -39,6 +39,9 @@ class SettingsRepositoryImpl @Inject constructor(
             },
             theme = p[Keys.THEME]?.let { runCatching { ThemeMode.valueOf(it) }.getOrNull() }
                 ?: ThemeMode.SYSTEM,
+            handlerLayout = p[Keys.HANDLER_LAYOUT]?.let {
+                runCatching { com.dav3.linksentry.domain.model.HandlerLayout.valueOf(it) }.getOrNull()
+            } ?: com.dav3.linksentry.domain.model.HandlerLayout.LIST,
         )
     }
 
