@@ -3,6 +3,13 @@ name: Production Build
 on:
   push:
     branches: [main]
+    # Docs/workflow-only pushes don't change the APK — skip the signed
+    # build (and the release-asset overwrite) for them. Any app/source
+    # change still triggers.
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.github/**'
   workflow_dispatch:
 
 permissions:
@@ -55,6 +62,11 @@ jobs:
           SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
         run: ./gradlew bundleRelease assembleRelease --no-daemon
 
+      - name: Rename artifacts to app name
+        run: |
+          mv app/build/outputs/apk/release/app-release.apk "LinkSentry-${{ steps.version.outputs.tag }}.apk"
+          mv app/build/outputs/bundle/release/app-release.aab "LinkSentry-${{ steps.version.outputs.tag }}.aab"
+
       - name: Security guardrails (no network capability, ever)
         run: |
           # The product promise: this app CANNOT fetch anything.
@@ -80,14 +92,14 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: linksentry-release-aab
-          path: app/build/outputs/bundle/release/*.aab
+          path: app/build/outputs/bundle/release/LinkSentry-*.aab
           retention-days: 90
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v7
         with:
           name: linksentry-release-apk
-          path: app/build/outputs/apk/release/*.apk
+          path: app/build/outputs/apk/release/LinkSentry-*.apk
           retention-days: 90
 
       - name: Create GitHub Release
@@ -98,5 +110,5 @@ jobs:
           generate_release_notes: true
           prerelease: false
           files: |
-            app/build/outputs/apk/release/*.apk
-            app/build/outputs/bundle/release/*.aab
+            app/build/outputs/apk/release/LinkSentry-*.apk
+            app/build/outputs/bundle/release/LinkSentry-*.aab
