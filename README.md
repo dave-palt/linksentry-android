@@ -32,6 +32,18 @@ leaking a URL, or phoning home. This is enforced in CI.
 - **Local history** (Room, on-device only) with retention control.
 - **No network. No analytics. No tracking. Zero permissions.**
 
+## Screenshots
+
+| Inspect (clean link) | Dangerous link (gated) |
+|---|---|
+| ![Inspect screen showing URL breakdown, cleanup controls, will-open preview and handler list](docs/images/inspectclean.png) | ![Danger screen showing risk signals behind the confirmation gate](docs/images/inspectdangerous.png) |
+
+| History | Settings |
+|---|---|
+| ![History list with open counts, last-opened times and last-app icons](docs/images/history.png) | ![Settings screen](docs/images/settings.png) |
+
+*Rendered from Roborazzi Compose previews — the same snapshots CI verifies.*
+
 ## Install
 
 Grab the latest signed APK from [Releases]. Dev builds install side-by-side
