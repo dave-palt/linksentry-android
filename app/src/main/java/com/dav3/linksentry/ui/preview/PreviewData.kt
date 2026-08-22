@@ -52,6 +52,8 @@ class FakeSettingsRepo(initial: AppSettings = AppSettings()) : SettingsRepositor
     override suspend fun setTheme(mode: com.dav3.linksentry.domain.model.ThemeMode) = Unit
 
     override suspend fun setHandlerLayout(layout: com.dav3.linksentry.domain.model.HandlerLayout) = Unit
+
+    override suspend fun setOpenCleaned(enabled: Boolean) = Unit
 }
 
 class FakeRoleChecker(private val isDefault: Boolean = true) : BrowserRoleChecker {
@@ -70,7 +72,23 @@ object NoopLinkActions : LinkActions {
 
 fun previewHistoryViewModel(records: List<LinkRecord>): HistoryViewModel = HistoryViewModel(FakeHistoryRepo(records))
 
-fun previewSettingsViewModel(settings: AppSettings): SettingsViewModel = SettingsViewModel(FakeSettingsRepo(settings), FakeRoleChecker(true), NoopLinkActions)
+fun previewSettingsViewModel(settings: AppSettings): SettingsViewModel = SettingsViewModel(FakeSettingsRepo(settings), FakeRoleChecker(true), NoopLinkActions, FakeHandlerPrefs())
+
+class FakeHandlerPrefs : com.dav3.linksentry.domain.repository.HandlerPrefsRepository {
+    override fun observeAll() = kotlinx.coroutines.flow.MutableStateFlow(
+        emptyList<com.dav3.linksentry.domain.system.HandlerUsage>(),
+    )
+
+    override suspend fun forKey(key: String) = emptyList<com.dav3.linksentry.domain.system.HandlerUsage>()
+
+    override suspend fun recordUse(key: String, pkg: String) = Unit
+
+    override suspend fun forget(key: String, pkg: String) = Unit
+
+    override suspend fun clearAll() = Unit
+
+    override suspend fun clearKey(key: String) = Unit
+}
 
 val demoFactsDangerous = UrlFacts(
     raw = "http://paypal.com.secure-login@203.0.113.7:8080/session/verify?utm_source=mail&fbclid=abc123",

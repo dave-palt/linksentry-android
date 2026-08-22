@@ -148,5 +148,7 @@ class HistoryAndSettingsTest {
         }
 
         override suspend fun setHandlerLayout(layout: com.dav3.linksentry.domain.model.HandlerLayout) {}
+
+        override suspend fun setOpenCleaned(enabled: Boolean) {}
     }
 }

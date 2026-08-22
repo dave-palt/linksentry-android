@@ -12,10 +12,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Shield
@@ -27,8 +27,11 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -36,7 +39,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.dav3.linksentry.domain.model.CleanupCategory
 import com.dav3.linksentry.domain.model.HandlerApp
 import com.dav3.linksentry.domain.model.Severity
 import com.dav3.linksentry.domain.model.Severity.DANGER
@@ -59,6 +64,10 @@ fun InspectContent(
     onOpenBrowserSettings: () -> Unit = {},
     onInspectNew: () -> Unit = {},
     handlerLayout: com.dav3.linksentry.domain.model.HandlerLayout = com.dav3.linksentry.domain.model.HandlerLayout.LIST,
+    onToggleKeepParam: (String) -> Unit = {},
+    onToggleKeepCredentials: () -> Unit = {},
+    onToggleOpenCleaned: () -> Unit = {},
+    onResetSorting: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     when (state) {
@@ -72,6 +81,10 @@ fun InspectContent(
             onReinspect,
             onInspectNew,
             handlerLayout,
+            onToggleKeepParam,
+            onToggleKeepCredentials,
+            onToggleOpenCleaned,
+            onResetSorting,
             modifier,
         )
         is InspectUiState.Invalid -> InvalidContent(state, onReinspect, modifier)
@@ -139,79 +152,96 @@ private fun InspectedContent(
     onReinspect: () -> Unit,
     onInspectNew: () -> Unit = {},
     handlerLayout: com.dav3.linksentry.domain.model.HandlerLayout = com.dav3.linksentry.domain.model.HandlerLayout.LIST,
+    onToggleKeepParam: (String) -> Unit = {},
+    onToggleKeepCredentials: () -> Unit = {},
+    onToggleOpenCleaned: () -> Unit = {},
+    onResetSorting: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
-    LazyColumn(
-        modifier = modifier.fillMaxWidth(),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(20.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        item {
-            OutlinedButton(onClick = onInspectNew, modifier = Modifier.fillMaxWidth()) {
-                Icon(
-                    Icons.Filled.Add,
-                    contentDescription = null,
-                    modifier = Modifier.size(16.dp),
-                )
-                Spacer(Modifier.width(6.dp))
-                Text("Inspect another link")
+    Box(modifier = modifier.fillMaxWidth()) {
+        LazyColumn(
+            modifier = Modifier.fillMaxWidth(),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                start = 20.dp,
+                top = 20.dp,
+                end = 20.dp,
+                bottom = 96.dp, // room for the FAB
+            ),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            item { HostHeader(state) }
+            item { VerdictCard(state) }
+            if (state.cleanup.removals.isNotEmpty()) {
+                item {
+                    CleanupCard(state, onToggleKeepParam, onToggleKeepCredentials, onToggleOpenCleaned)
+                }
             }
-        }
-        item { HostHeader(state) }
-        item { VerdictCard(state) }
-        if (state.verdict.signals.isNotEmpty()) {
+            if (state.verdict.signals.isNotEmpty()) {
+                item {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text("What we noticed", style = MaterialTheme.typography.titleMedium)
+                        state.verdict.signals.forEach { signal ->
+                            SignalRow(signal.severity, signal.display())
+                        }
+                    }
+                }
+            }
+            item { BreakdownCard(state) }
             item {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("What we noticed", style = MaterialTheme.typography.titleMedium)
-                    state.verdict.signals.forEach { signal ->
-                        SignalRow(signal.severity, signal.display())
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    OutlinedButton(onClick = onShare) {
+                        Icon(Icons.Filled.Share, contentDescription = "Share")
+                    }
+                    TextButton(onClick = onResetSorting) {
+                        Text("Reset app order")
+                    }
+                }
+            }
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Open with", style = MaterialTheme.typography.titleMedium)
+                    if (state.handlers.isEmpty()) {
+                        Text(
+                            "No installed app can open this link.",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                    if (handlerLayout == com.dav3.linksentry.domain.model.HandlerLayout.GRID) {
+                        HandlerGrid(state.handlers, onOpenApp)
+                    } else {
+                        state.handlers.forEach { app -> HandlerRow(app, onClick = { onOpenApp(app) }) }
                     }
                 }
             }
         }
-        item { BreakdownCard(state) }
-        item {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = onCopy) {
-                    Icon(Icons.Filled.ContentCopy, contentDescription = null, Modifier.size(16.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Copy")
-                }
-                OutlinedButton(onClick = onCopyCleaned) {
-                    Text("Copy cleaned")
-                }
-                OutlinedButton(onClick = onShare) {
-                    Icon(Icons.Filled.Share, contentDescription = null, Modifier.size(16.dp))
-                }
-            }
-        }
-        item {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Open with", style = MaterialTheme.typography.titleMedium)
-                if (state.handlers.isEmpty()) {
-                    Text(
-                        "No installed app can open this link.",
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                }
-                if (handlerLayout == com.dav3.linksentry.domain.model.HandlerLayout.GRID) {
-                    HandlerGrid(state.handlers, onOpenApp)
-                } else {
-                    state.handlers.forEach { app -> HandlerRow(app, onClick = { onOpenApp(app) }) }
-                }
-            }
-        }
-        item {
-            androidx.compose.material3.TextButton(onClick = onReinspect) {
-                Text("Inspect another link")
-            }
+        // Single "add new" affordance — replaces the old top button and
+        // bottom text button.
+        SmallFloatingActionButton(
+            onClick = onInspectNew,
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(20.dp),
+        ) {
+            Icon(Icons.Filled.Add, contentDescription = "Inspect another link")
         }
     }
 }
 
 @Composable
 private fun HostHeader(state: InspectUiState.Inspect) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Column(
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Text(
+            "You are about to open",
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
         Text(
             state.facts.host.ifEmpty { state.facts.raw },
             style = MaterialTheme.typography.headlineSmall,
@@ -223,6 +253,93 @@ private fun HostHeader(state: InspectUiState.Inspect) {
             fontFamily = FontFamily.Monospace,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+    }
+}
+
+/** Category color used consistently: cleanup card, breakdown rows, buttons. */
+@Composable
+private fun CleanupCategory.color(): Color = when (this) {
+    CleanupCategory.CREDENTIALS -> Color(0xFFDC2626)
+    CleanupCategory.TRACKING_PARAM -> Color(0xFF2563EB)
+}
+
+/**
+ * "Clean this link": every removal with its category color, per-removal
+ * keep/opt-out, the live cleaned URL, and the open-cleaned toggle.
+ */
+@Composable
+private fun CleanupCard(
+    state: InspectUiState.Inspect,
+    onToggleKeepParam: (String) -> Unit,
+    onToggleKeepCredentials: () -> Unit,
+    onToggleOpenCleaned: () -> Unit,
+) {
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("Clean this link", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "These parts can be removed before you open or copy the link:",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            state.cleanup.removals.forEach { r ->
+                val kept = when (r.category) {
+                    CleanupCategory.CREDENTIALS -> state.keepCredentials
+                    CleanupCategory.TRACKING_PARAM -> r.token in state.keepParams
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Surface(
+                        color = r.category.color(),
+                        shape = CircleShape,
+                        modifier = Modifier.size(10.dp),
+                    ) {}
+                    Spacer(Modifier.width(10.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            r.token,
+                            fontFamily = FontFamily.Monospace,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (kept) MaterialTheme.colorScheme.onSurfaceVariant else r.category.color(),
+                        )
+                        Text(
+                            r.detail,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    TextButton(
+                        onClick = {
+                            when (r.category) {
+                                CleanupCategory.CREDENTIALS -> onToggleKeepCredentials()
+                                CleanupCategory.TRACKING_PARAM -> onToggleKeepParam(r.token)
+                            }
+                        },
+                    ) {
+                        // Action label: what tapping will do.
+                        Text(if (kept) "Remove" else "Keep")
+                    }
+                }
+            }
+            HorizontalDivider()
+            Text("Cleaned link", style = MaterialTheme.typography.labelMedium)
+            Text(
+                state.cleanup.url,
+                fontFamily = FontFamily.Monospace,
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Switch(checked = state.openCleaned, onCheckedChange = { onToggleOpenCleaned() })
+                Spacer(Modifier.width(8.dp))
+                Column {
+                    Text("Open cleaned link", style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        "Handlers below open the cleaned URL while enabled",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -284,7 +401,7 @@ private fun SignalRow(severity: Severity, copy: SignalCopy) {
     Row(verticalAlignment = Alignment.Top) {
         Surface(
             color = severity.color(),
-            shape = androidx.compose.foundation.shape.CircleShape,
+            shape = CircleShape,
             modifier = Modifier
                 .padding(top = 6.dp)
                 .size(10.dp),
@@ -307,15 +424,25 @@ private fun BreakdownCard(state: InspectUiState.Inspect) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("URL breakdown", style = MaterialTheme.typography.titleMedium)
             HorizontalDivider()
+            state.facts.userInfo?.let {
+                BreakdownRow("Credentials", it, CleanupCategory.CREDENTIALS)
+            }
             BreakdownRow("Scheme", state.facts.scheme)
-            state.facts.userInfo?.let { BreakdownRow("Credentials", it) }
             BreakdownRow("Host", state.facts.rawHost.ifEmpty { "—" })
             if (state.facts.port != -1) BreakdownRow("Port", state.facts.port.toString())
             BreakdownRow("Path", state.facts.path.ifEmpty { "/" })
             state.facts.params.forEach { p ->
+                val category = if (p.name.lowercase().startsWith("utm_") ||
+                    p.name.lowercase() in TRACKING_PARAM_NAMES_LOWER
+                ) {
+                    CleanupCategory.TRACKING_PARAM
+                } else {
+                    null
+                }
                 BreakdownRow(
                     "Param: ${p.name}",
                     p.decodedValue ?: p.rawValue ?: "(no value)",
+                    category,
                 )
             }
             state.facts.fragment?.let { BreakdownRow("Fragment", it) }
@@ -323,18 +450,35 @@ private fun BreakdownCard(state: InspectUiState.Inspect) {
     }
 }
 
+/** Lowercased tracker names — mirrors UrlAnalyzer's list for UI coloring. */
+private val TRACKING_PARAM_NAMES_LOWER = setOf(
+    "fbclid", "gclid", "msclkid", "mc_eid", "igshid", "ref", "ref_src",
+    "referrer", "source", "yclid", "_hsenc", "_hsmi", "vero_id", "wickedid",
+)
+
 @Composable
-private fun BreakdownRow(label: String, value: String) {
+private fun BreakdownRow(label: String, value: String, category: CleanupCategory? = null) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        Text(
-            label,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (category != null) {
+                Surface(
+                    color = category.color(),
+                    shape = CircleShape,
+                    modifier = Modifier.size(8.dp),
+                ) {}
+                Spacer(Modifier.width(6.dp))
+            }
+            Text(
+                label,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         Text(
             value,
             style = MaterialTheme.typography.bodySmall,
             fontFamily = FontFamily.Monospace,
+            color = if (category != null) category.color() else MaterialTheme.colorScheme.onSurface,
         )
     }
 }
@@ -385,14 +529,14 @@ private fun HandlerGridCell(app: HandlerApp, onClick: () -> Unit) {
             app.label,
             style = MaterialTheme.typography.labelMedium,
             maxLines = 1,
-            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }
 
 @Composable
 private fun HandlerGrid(apps: List<HandlerApp>, onOpenApp: (HandlerApp) -> Unit) {
-    // Fixed 4-column launcher grid.
+    // Launcher-style 4-column grid.
     androidx.compose.foundation.layout.FlowRow(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -418,7 +562,7 @@ private fun AppIcon(app: HandlerApp, size: androidx.compose.ui.unit.Dp = 28.dp) 
     } else {
         Surface(
             color = MaterialTheme.colorScheme.surfaceVariant,
-            shape = androidx.compose.foundation.shape.CircleShape,
+            shape = CircleShape,
             modifier = Modifier.size(size),
         ) {
             Icon(

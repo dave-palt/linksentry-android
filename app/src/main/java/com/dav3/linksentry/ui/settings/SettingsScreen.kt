@@ -37,6 +37,7 @@ class SettingsViewModel @Inject constructor(
     private val repository: SettingsRepository,
     roleChecker: BrowserRoleChecker,
     private val actions: LinkActions,
+    private val handlerPrefs: com.dav3.linksentry.domain.repository.HandlerPrefsRepository,
 ) : ViewModel() {
     val settings = repository.settings
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), AppSettings())
@@ -57,6 +58,14 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { repository.setHandlerLayout(layout) }
     }
 
+    fun resetHandlerSorting() {
+        viewModelScope.launch { handlerPrefs.clearAll() }
+    }
+
+    fun setOpenCleaned(enabled: Boolean) {
+        viewModelScope.launch { repository.setOpenCleaned(enabled) }
+    }
+
     fun openDefaultAppsSettings() = actions.openDefaultAppsSettings()
 }
 
@@ -74,6 +83,8 @@ fun SettingsScreen(
         onSetTheme = viewModel::setTheme,
         onOpenDefaultAppsSettings = viewModel::openDefaultAppsSettings,
         onSetHandlerLayout = viewModel::setHandlerLayout,
+        onSetOpenCleaned = viewModel::setOpenCleaned,
+        onResetSorting = viewModel::resetHandlerSorting,
     )
 }
 
@@ -87,6 +98,8 @@ fun SettingsContent(
     onSetTheme: (ThemeMode) -> Unit,
     onOpenDefaultAppsSettings: () -> Unit,
     onSetHandlerLayout: (com.dav3.linksentry.domain.model.HandlerLayout) -> Unit = {},
+    onSetOpenCleaned: (Boolean) -> Unit = {},
+    onResetSorting: () -> Unit = {},
 ) {
     Column(
         Modifier
@@ -152,6 +165,40 @@ fun SettingsContent(
                 ThemeChip("System", ThemeMode.SYSTEM, settings, onSetTheme)
                 ThemeChip("Light", ThemeMode.LIGHT, settings, onSetTheme)
                 ThemeChip("Dark", ThemeMode.DARK, settings, onSetTheme)
+            }
+        }
+
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("Open cleaned links", style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    "Handlers open the cleaned URL (credentials and tracking removed) by default.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(checked = settings.openCleaned, onCheckedChange = onSetOpenCleaned)
+        }
+
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("Reset app ordering", style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    "Forget which apps you prefer for which sites. Sorting starts fresh.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            OutlinedButton(onClick = onResetSorting) {
+                Text("Reset")
             }
         }
 

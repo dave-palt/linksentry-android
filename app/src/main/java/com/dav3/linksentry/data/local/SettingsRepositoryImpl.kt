@@ -24,6 +24,7 @@ class SettingsRepositoryImpl @Inject constructor(
         val RETENTION_DAYS = intPreferencesKey("retention_days")
         val THEME = stringPreferencesKey("theme")
         val HANDLER_LAYOUT = stringPreferencesKey("handler_layout")
+        val OPEN_CLEANED = booleanPreferencesKey("open_cleaned")
     }
 
     private val dataStore = context.appDataStore
@@ -39,6 +40,7 @@ class SettingsRepositoryImpl @Inject constructor(
             },
             theme = p[Keys.THEME]?.let { runCatching { ThemeMode.valueOf(it) }.getOrNull() }
                 ?: ThemeMode.SYSTEM,
+            openCleaned = p[Keys.OPEN_CLEANED] ?: false,
             handlerLayout = p[Keys.HANDLER_LAYOUT]?.let {
                 runCatching { com.dav3.linksentry.domain.model.HandlerLayout.valueOf(it) }.getOrNull()
             } ?: com.dav3.linksentry.domain.model.HandlerLayout.LIST,
@@ -63,5 +65,9 @@ class SettingsRepositoryImpl @Inject constructor(
 
     override suspend fun setHandlerLayout(layout: com.dav3.linksentry.domain.model.HandlerLayout) {
         dataStore.edit { it[Keys.HANDLER_LAYOUT] = layout.name }
+    }
+
+    override suspend fun setOpenCleaned(enabled: Boolean) {
+        dataStore.edit { it[Keys.OPEN_CLEANED] = enabled }
     }
 }
