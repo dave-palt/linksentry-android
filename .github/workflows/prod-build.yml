@@ -3,6 +3,13 @@ name: Production Build
 on:
   push:
     branches: [main]
+    # Docs/workflow-only pushes don't change the APK — skip the signed
+    # build (and the release-asset overwrite) for them. Any app/source
+    # change still triggers.
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.github/**'
   workflow_dispatch:
 
 permissions:

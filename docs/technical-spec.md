@@ -76,7 +76,7 @@ clear, count.
 build job (testDebugUnitTest, assembleDebug, guardrails, APK artifact, dev
 pre-release on push). PRs targeting `main` also run the checks.
 
-`prod-build.yml` (push → main, or manual dispatch): reads `versionName` from
+`prod-build.yml` (push → main with `paths-ignore` for docs/README/workflow-only changes, or manual dispatch): reads `versionName` from
 `app/build.gradle.kts`, decodes the signing keystore from the
 `SIGNING_KEYSTORE_BASE64` secret, runs unit tests, builds signed
 `bundleRelease` + `assembleRelease`, re-runs the security guardrails against
