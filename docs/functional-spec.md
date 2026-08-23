@@ -2,6 +2,16 @@
 
 ## Flows
 
+### F0 — Try a sample (demo)
+
+The manual-inspect entry screen offers curated sample links ("Tracked
+shopping link", "Shortened link", "Phishing-style link") as one-tap chips.
+Tapping one inspects that URL through the REAL analyzer — the screen is
+identical to inspecting the same link for real, so a newcomer can explore
+LinkSentry without a link at hand or any default-browser setup. No network,
+no faked results; `DemoLinksTest` pins each sample to its advertised
+verdict so the demo cannot silently rot.
+
 ### F1 — Intercept (default browser)
 User taps an http/https link anywhere in the OS → LinkSentry opens
 (singleTop) on Inspect. Nothing is fetched. The screen shows: host headline,
@@ -28,7 +38,7 @@ Settings). While gated, the last-app icon in History is disabled.
 ### F4 — Manual inspect
 Launcher entry opens the Inspect tab in Manual mode: text field + role
 banner ("Set as default browser" → system Default apps screen) when LinkSentry
-isn't the default browser.
+isn't the default browser. Below the field, one-tap sample chips (F0).
 
 ### F5 — History
 Every URL is recorded **once** (unique on URL): re-inspects refresh severity,

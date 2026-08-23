@@ -29,6 +29,7 @@ leaking a URL, or phoning home. This is enforced in CI.
 - **Copy / Copy cleaned / Share** — cleaned strips credentials + tracking
   parameters.
 - **Manual inspect** — paste or type any URL.
+- **Try-demo samples** — one-tap sample links (tracked / shortened / phishing-style) on the entry screen; zero setup, real analysis.
 - **Link cleanup** — per-param Keep/Remove, "always remove" personal rules,
   custom tracking params, and a live "will open" preview of the effective URL.
 - **Danger gate** — DANGER links hide the handler list behind a confirmation

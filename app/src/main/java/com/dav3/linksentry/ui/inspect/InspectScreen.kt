@@ -59,6 +59,7 @@ fun InspectScreen(
             onShare = viewModel::share,
             onReinspect = viewModel::reset,
             onManualInput = viewModel::onInputChange,
+            onSubmitDemo = viewModel::submitText,
             onSubmitManual = {
                 val s = state
                 if (s is InspectUiState.Manual) viewModel.submitText(s.input)

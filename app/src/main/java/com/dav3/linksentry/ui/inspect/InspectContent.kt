@@ -56,6 +56,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.dav3.linksentry.domain.analyze.UrlAnalyzer
 import com.dav3.linksentry.domain.model.CleanupCategory
+import com.dav3.linksentry.domain.model.DemoLinks
 import com.dav3.linksentry.domain.model.HandlerApp
 import com.dav3.linksentry.domain.model.ParamBehavior
 import com.dav3.linksentry.domain.model.PseudoHandler
@@ -78,6 +79,7 @@ fun InspectContent(
     onReinspect: () -> Unit,
     onManualInput: (String) -> Unit,
     onSubmitManual: () -> Unit = {},
+    onSubmitDemo: (String) -> Unit = {},
     onOpenBrowserSettings: () -> Unit = {},
     onInspectNew: () -> Unit = {},
     handlerLayout: com.dav3.linksentry.domain.model.HandlerLayout = com.dav3.linksentry.domain.model.HandlerLayout.LIST,
@@ -96,7 +98,7 @@ fun InspectContent(
     modifier: Modifier = Modifier,
 ) {
     when (state) {
-        is InspectUiState.Manual -> ManualContent(state, onManualInput, onSubmitManual, onOpenBrowserSettings, modifier)
+        is InspectUiState.Manual -> ManualContent(state, onManualInput, onSubmitManual, onSubmitDemo, onOpenBrowserSettings, modifier)
         is InspectUiState.Inspect -> InspectedContent(
             state,
             onOpenApp,
@@ -129,6 +131,7 @@ private fun ManualContent(
     state: InspectUiState.Manual,
     onManualInput: (String) -> Unit,
     onSubmitManual: () -> Unit,
+    onSubmitDemo: (String) -> Unit,
     onOpenBrowserSettings: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -171,6 +174,29 @@ private fun ManualContent(
             enabled = state.input.isNotBlank(),
         ) {
             Text("Inspect link")
+        }
+
+        // Demo / "try it": curated sample links run through the REAL
+        // analyzer — one tap, no setup, no network (Immich-style demo).
+        Text(
+            "No link at hand? Try a sample:",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        DemoLinkChips(onSubmitDemo)
+    }
+}
+
+@Composable
+private fun DemoLinkChips(onSubmitDemo: (String) -> Unit) {
+    androidx.compose.foundation.layout.FlowRow(
+        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
+    ) {
+        DemoLinks.all.forEach { sample ->
+            androidx.compose.material3.SuggestionChip(
+                onClick = { onSubmitDemo(sample.url) },
+                label = { Text(sample.label) },
+            )
         }
     }
 }
