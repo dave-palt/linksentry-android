@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -44,6 +45,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.dav3.linksentry.domain.analyze.UrlAnalyzer
 import com.dav3.linksentry.domain.model.DangerOverride
+import com.dav3.linksentry.domain.model.DemoTour
 import com.dav3.linksentry.domain.model.HandlerApp
 import com.dav3.linksentry.domain.model.HistoryAction
 import com.dav3.linksentry.domain.model.LinkRecord
@@ -64,8 +66,26 @@ class HistoryViewModel @Inject constructor(
     private val repository: HistoryRepository,
     private val actions: LinkActions,
     private val dangerOverrides: DangerOverridesRepository,
+    private val demoRepo: com.dav3.linksentry.domain.repository.DemoRepository,
 ) : ViewModel() {
     val query = MutableStateFlow("")
+
+    /** First-open demo: fake rows + explainer, dismissed on any interaction. */
+    val demoMode = MutableStateFlow<Boolean?>(null) // null = not yet determined
+
+    init {
+        viewModelScope.launch {
+            demoMode.value = !demoRepo.isSeen(com.dav3.linksentry.domain.repository.DemoKey.HISTORY)
+        }
+    }
+
+    /** Rows to display: fake demo data while the demo is active. */
+    val demoRecords = DemoTour.fakeHistory(System.currentTimeMillis())
+
+    fun dismissDemo() {
+        demoMode.value = false
+        viewModelScope.launch { demoRepo.markSeen(com.dav3.linksentry.domain.repository.DemoKey.HISTORY) }
+    }
 
     private val allRecords = repository.observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -160,18 +180,22 @@ fun HistoryScreen(
     val records by viewModel.records.collectAsState()
     val query by viewModel.query.collectAsState()
     val lastAppLaunch by viewModel.lastAppLaunch.collectAsState()
+    val demoMode by viewModel.demoMode.collectAsState()
     LaunchedEffect(records) { viewModel.refreshLastAppLaunches(records) }
+    val demoActive = demoMode == true
     HistoryContent(
-        lastAppLaunch = lastAppLaunch,
-        records = records,
+        lastAppLaunch = if (demoActive) emptyMap() else lastAppLaunch,
+        records = if (demoActive) viewModel.demoRecords else records,
         query = query,
         onQueryChange = viewModel::search,
         onReinspect = onReinspect,
-        onClear = viewModel::clear,
-        onDelete = viewModel::delete,
-        onRepeatAction = viewModel::repeatAction,
-        onDeleteFound = viewModel::deleteFound,
-        onOpenWithLastApp = viewModel::openWithLastApp,
+        demoBanner = demoActive,
+        onDismissDemo = viewModel::dismissDemo,
+        onClear = if (demoActive) ({}) else viewModel::clear,
+        onDelete = if (demoActive) ({ _: Long -> }) else viewModel::delete,
+        onRepeatAction = if (demoActive) ({ _: LinkRecord -> }) else viewModel::repeatAction,
+        onDeleteFound = if (demoActive) ({}) else viewModel::deleteFound,
+        onOpenWithLastApp = if (demoActive) ({ _: LinkRecord -> }) else viewModel::openWithLastApp,
     )
 }
 
@@ -180,6 +204,8 @@ fun HistoryScreen(
 fun HistoryContent(
     records: List<LinkRecord>,
     query: String = "",
+    demoBanner: Boolean = false,
+    onDismissDemo: () -> Unit = {},
     onQueryChange: (String) -> Unit = {},
     onReinspect: (String) -> Unit,
     onClear: () -> Unit,
@@ -192,7 +218,30 @@ fun HistoryContent(
     var showClearDialog by remember { mutableStateOf(false) }
     var showDeleteFoundDialog by remember { mutableStateOf(false) }
 
-    Column(Modifier.fillMaxSize()) {
+    Column(
+        Modifier
+            .fillMaxSize()
+            // Edge-to-edge: header stack (demo banner, title, search) starts
+            // below the status bar.
+            .statusBarsPadding(),
+    ) {
+        if (demoBanner) {
+            Surface(color = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    Modifier.padding(horizontal = 20.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Demo — sample history", style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            "These rows are fake. Real inspected links appear here; tap one to re-inspect it.",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                    TextButton(onClick = onDismissDemo) { Text("Got it") }
+                }
+            }
+        }
         Row(
             Modifier
                 .fillMaxWidth()
@@ -264,7 +313,13 @@ fun HistoryContent(
             }
         } else {
             LazyColumn(
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(20.dp),
+                // Root column already pads the status bar; only the list rest.
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                    start = 20.dp,
+                    top = 8.dp,
+                    end = 20.dp,
+                    bottom = 20.dp,
+                ),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 items(records, key = { it.id }) { record ->

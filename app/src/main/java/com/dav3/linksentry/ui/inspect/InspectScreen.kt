@@ -1,5 +1,6 @@
 package com.dav3.linksentry.ui.inspect
 
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -21,10 +22,20 @@ fun InspectScreen(
     onSnackbarShown: () -> Unit = {},
     onInspectNew: () -> Unit = {},
     handlerLayout: com.dav3.linksentry.domain.model.HandlerLayout = com.dav3.linksentry.domain.model.HandlerLayout.LIST,
+    replayTour: Boolean = false,
+    onTourRestarted: () -> Unit = {},
     viewModel: InspectViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsState()
     val snackbar = remember { SnackbarHostState() }
+
+    // Replay request from Settings (NavHost flag).
+    LaunchedEffect(replayTour) {
+        if (replayTour) {
+            viewModel.startTour()
+            onTourRestarted()
+        }
+    }
 
     // Consume a VIEW intent URL exactly once.
     LaunchedEffect(initialUrl) {
@@ -50,6 +61,11 @@ fun InspectScreen(
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
+        // The outer NavHost Scaffold already consumes system-bar insets;
+        // zero them here to avoid double status-bar padding (the tall
+        // header the user reported). Lists receive the status-bar inset
+        // via their contentPadding instead — content scrolls edge-to-edge.
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
     ) { padding ->
         InspectContent(
             state = state,
@@ -79,6 +95,10 @@ fun InspectScreen(
             onConfirmOpen = viewModel::confirmOpen,
             onCancelConfirm = viewModel::cancelConfirm,
             onRevokeOverride = viewModel::revokeOverride,
+            onAdvanceTour = viewModel::advanceTour,
+            onSkipTour = viewModel::skipTour,
+            onToggleEnforceHttps = viewModel::toggleEnforceHttps,
+            onToggleHistoryExcluded = viewModel::toggleHistoryExcluded,
             modifier = Modifier.padding(padding),
         )
     }

@@ -26,6 +26,7 @@ class SettingsRepositoryImpl @Inject constructor(
         val HANDLER_LAYOUT = stringPreferencesKey("handler_layout")
         val OPEN_CLEANED = booleanPreferencesKey("open_cleaned")
         val CUSTOM_TRACKING = stringPreferencesKey("custom_tracking_params")
+        val HISTORY_EXCLUSIONS = stringPreferencesKey("history_exclusions")
     }
 
     private val dataStore = context.appDataStore
@@ -47,6 +48,8 @@ class SettingsRepositoryImpl @Inject constructor(
             handlerLayout = p[Keys.HANDLER_LAYOUT]?.let {
                 runCatching { com.dav3.linksentry.domain.model.HandlerLayout.valueOf(it) }.getOrNull()
             } ?: com.dav3.linksentry.domain.model.HandlerLayout.LIST,
+            historyExclusions = (p[Keys.HISTORY_EXCLUSIONS] ?: "")
+                .split("\n").filter { it.isNotBlank() }.toSet(),
         )
     }
 
@@ -90,6 +93,23 @@ class SettingsRepositoryImpl @Inject constructor(
             val cur = (p[Keys.CUSTOM_TRACKING] ?: "")
                 .split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
             p[Keys.CUSTOM_TRACKING] = (cur - n).sorted().joinToString(",")
+        }
+    }
+
+    override suspend fun excludeUrlFromHistory(url: String) {
+        val u = url.trim()
+        if (u.isEmpty()) return
+        dataStore.edit { p ->
+            val cur = (p[Keys.HISTORY_EXCLUSIONS] ?: "").split("\n").filter { it.isNotBlank() }
+            if (u !in cur) p[Keys.HISTORY_EXCLUSIONS] = (cur + u).joinToString("\n")
+        }
+    }
+
+    override suspend fun unexcludeUrlFromHistory(url: String) {
+        val u = url.trim()
+        dataStore.edit { p ->
+            val cur = (p[Keys.HISTORY_EXCLUSIONS] ?: "").split("\n").filter { it.isNotBlank() }
+            p[Keys.HISTORY_EXCLUSIONS] = cur.filter { it != u }.joinToString("\n")
         }
     }
 }

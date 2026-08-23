@@ -16,6 +16,10 @@ interface HistoryRepository {
     /** Delete one history row (swipe/trash in the History list). */
     suspend fun delete(id: Long)
 
+    /** Delete every row for one exact URL (per-link history opt-out);
+     *  returns rows removed. */
+    suspend fun deleteByUrl(url: String): Int
+
     /** Remember which app last handled [url] (History direct re-open). */
     suspend fun recordApp(url: String, pkg: String, activity: String?, label: String?)
 

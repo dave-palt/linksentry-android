@@ -41,6 +41,8 @@ class FakeHistoryRepo(records: List<LinkRecord> = emptyList()) : HistoryReposito
 
     override suspend fun delete(id: Long) = Unit
 
+    override suspend fun deleteByUrl(url: String): Int = 0
+
     override fun search(query: String) = flow
     override suspend fun deleteFound(query: String) = 0
     override suspend fun recordApp(url: String, pkg: String, activity: String?, label: String?) = Unit
@@ -64,6 +66,10 @@ class FakeSettingsRepo(initial: AppSettings = AppSettings()) : SettingsRepositor
     override suspend fun addCustomTrackingParam(name: String) = Unit
 
     override suspend fun removeCustomTrackingParam(name: String) = Unit
+
+    override suspend fun excludeUrlFromHistory(url: String) = Unit
+
+    override suspend fun unexcludeUrlFromHistory(url: String) = Unit
 }
 
 class FakeRoleChecker(private val isDefault: Boolean = true) : BrowserRoleChecker {
@@ -80,9 +86,9 @@ object NoopLinkActions : LinkActions {
     override fun openDefaultAppsSettings() = Unit
 }
 
-fun previewHistoryViewModel(records: List<LinkRecord>): HistoryViewModel = HistoryViewModel(FakeHistoryRepo(records), NoopLinkActions, FakeDangerOverrides())
+fun previewHistoryViewModel(records: List<LinkRecord>): HistoryViewModel = HistoryViewModel(FakeHistoryRepo(records), NoopLinkActions, FakeDangerOverrides(), FakeDemoRepo())
 
-fun previewSettingsViewModel(settings: AppSettings): SettingsViewModel = SettingsViewModel(FakeSettingsRepo(settings), FakeRoleChecker(true), NoopLinkActions, FakeHandlerPrefs(), FakeDangerOverrides())
+fun previewSettingsViewModel(settings: AppSettings): SettingsViewModel = SettingsViewModel(FakeSettingsRepo(settings), FakeRoleChecker(true), NoopLinkActions, FakeHandlerPrefs(), FakeDangerOverrides(), FakeDemoRepo())
 
 class FakeDangerOverrides : com.dav3.linksentry.domain.repository.DangerOverridesRepository {
     override fun observeAll() = kotlinx.coroutines.flow.MutableStateFlow(
@@ -207,3 +213,10 @@ val demoHistory = listOf(
         timestamp = 1_771_200_000_000,
     ),
 )
+
+class FakeDemoRepo : com.dav3.linksentry.domain.repository.DemoRepository {
+    override fun observe(key: com.dav3.linksentry.domain.repository.DemoKey) = kotlinx.coroutines.flow.MutableStateFlow(false)
+    override suspend fun isSeen(key: com.dav3.linksentry.domain.repository.DemoKey) = false
+    override suspend fun markSeen(key: com.dav3.linksentry.domain.repository.DemoKey) {}
+    override suspend fun unmarkSeen(key: com.dav3.linksentry.domain.repository.DemoKey) {}
+}

@@ -321,4 +321,32 @@ object UrlAnalyzer {
 
     /** URL with credentials stripped and tracking params removed. */
     fun cleanedUrl(f: UrlFacts): String = cleanup(f).url
+
+    /**
+     * "Enforce HTTPS": rewrites http→https on the CLEANED url (tracking
+     * params and credentials still removed) and drops an explicit :80
+     * port (the https default). Non-standard ports survive; non-http
+     * schemes return the plain cleanup untouched.
+     */
+    fun upgradeScheme(f: UrlFacts): LinkCleanup {
+        val base = cleanup(f)
+        if (f.scheme != "http") return base
+        // Position of the authority in the cleaned url: after "http://"
+        // and credentials (kept credentials were re-embedded by cleanup).
+        val prefix = "http://"
+        val rest = base.url.removePrefix(prefix)
+        // authority ends at first '/', '?' or '#'
+        val authEnd = rest.indexOfFirst { it == '/' || it == '?' || it == '#' }.let { if (it == -1) rest.length else it }
+        val authority = rest.take(authEnd)
+        val tail = rest.drop(authEnd)
+        // host = authority without credentials and port
+        val host = authority.substringAfterLast("@").substringBefore(":")
+        val creds = if (authority.contains("@")) authority.substringBefore("@") + "@" else ""
+        val port = f.port
+        val portPart = when (port) {
+            -1, 80 -> ""
+            else -> ":$port"
+        }
+        return base.copy(url = "https://" + creds + host + portPart + tail)
+    }
 }

@@ -12,6 +12,12 @@ package com.dav3.linksentry.domain.model
  */
 data object DemoLinks {
 
+    /** True when [url] is one of the curated demo/tour URLs — such links
+     *  are never written to history (user: "let's not store in history
+     *  any of the demo links"). */
+    fun isDemo(url: String): Boolean = all.any { it.url == url } ||
+        url == DemoTour.URL_CLEAN || url == DemoTour.URL_DANGER
+
     /** A normal shopping link littered with tracker parameters. */
     const val TRACKING: String =
         "https://www.example-shop.com/deals/laptop?utm_source=newsletter&utm_medium=email&fbclid=AbC123xYz&gclid=EFGH789"

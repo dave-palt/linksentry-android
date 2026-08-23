@@ -12,6 +12,18 @@ LinkSentry without a link at hand or any default-browser setup. No network,
 no faked results; `DemoLinksTest` pins each sample to its advertised
 verdict so the demo cannot silently rot.
 
+### F0b — Guided demo tour
+
+First Inspect open (seen-flag in DataStore) starts a scripted spotlight
+tour over the hero card: verdict → URL breakdown → cleanup → open-cleaned
+switch → handler list. The scrim is draw-only (taps inside the cut-out
+reach the card), the breakdown auto-expands once per step as a nudge —
+the user's own taps always win — and every demo action is sandboxed: demo
+links are never recorded to history, and "would open" notices replace
+real launches. Replay anytime from Settings → "Replay intro tour".
+First History open shows fake rows under a dismissible "Demo — sample
+history" banner; Settings shows a one-time tip.
+
 ### F1 — Intercept (default browser)
 User taps an http/https link anywhere in the OS → LinkSentry opens
 (singleTop) on Inspect. Nothing is fetched. The screen shows: host headline,
@@ -22,11 +34,16 @@ If the link arrives while the app is open, `onNewIntent` re-runs inspection.
 The inspect screen leads with a merged hero card ("You are about to open"):
 host headline, editable raw URL, collapsible **URL breakdown** (whole-row
 clickable section: scheme/host/path/query params with per-param Keep/Remove,
-default-behavior labels, "Always remove" for unknown params), and a "Will
-open" preview showing the exact effective URL (raw or cleaned) under the
-**Open cleaned link** switch. Copy URL / Copy cleaned URL / Share ride the
-handler list as pseudo entries (distinct icons). Tapping a handler opens that
-app via an **explicit** intent (component set). DANGER links hide the handler
+default-behavior labels, "Always remove" for unknown params; scheme/host/port
+rows are risk-colored from the analyzer's own signals — https green, http
+amber, IP-literal red, shortener amber, odd port amber), and a "Will open"
+preview showing the exact effective URL (raw or cleaned) under a row of
+three aligned inline toggles: **Open cleaned link**, **Enforce HTTPS**
+(http links only — upgrades the URL before opening) and **Keep out of
+history** (per-link opt-out; demo links are pre-checked and locked).
+Copy URL / Copy cleaned URL / Share ride the handler list as pseudo
+entries (distinct icons). Tapping a handler opens that app via an
+**explicit** intent (component set). DANGER links hide the handler
 list behind the danger gate (F6).
 
 ### F3 — Danger gate
@@ -43,13 +60,15 @@ isn't the default browser. Below the field, one-tap sample chips (F0).
 ### F5 — History
 Every URL is recorded **once** (unique on URL): re-inspects refresh severity,
 opens bump `openCount` + last-opened timestamp and record the handler app;
-copy/share update the last action without touching the count. List shows
-newest first (cap 200 rows), tap to re-inspect, per-row delete, **filter by
-URL/host content** with **Delete all found** (both confirmed), plus Clear all
-with confirmation. Rows lead with the **last-handler icon** — tap to re-open
-directly (disabled for DANGER links unless host/signal-set whitelisted);
-`opened 3× · last opened 5m ago` when opened more than once. Pruning by
-retention happens on write.
+copy/share update the last action without touching the count. Links opted
+out via **Keep out of history** (and demo links always) are never recorded.
+List shows newest first (cap 200 rows), tap to re-inspect, per-row delete,
+**filter by URL/host content** with **Delete all found** (both confirmed),
+plus Clear all with confirmation. Rows lead with the **last-handler icon** —
+tap to re-open directly (disabled for DANGER links unless host/signal-set
+whitelisted); `opened 3× · last opened 5m ago` when opened more than once.
+Pruning by retention happens on write. First open shows a dismissible demo
+banner with fake rows.
 
 ### F6 — Settings
 - Default-browser status card + button to system Default apps settings.
@@ -61,6 +80,7 @@ retention happens on write.
   newline separated); they're stripped in the cleaned URL and flagged in the
   breakdown like built-in trackers. Managed under Settings.
 - **Allowed dangerous links** — revoke stored danger-gate overrides.
+- **Replay intro tour** — restarts the F0b spotlight tour on Inspect.
 - The screen scrolls (bottom rows always reachable).
 
 ## Risk signals
