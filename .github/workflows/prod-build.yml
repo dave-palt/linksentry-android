@@ -44,13 +44,21 @@ jobs:
       - name: No INTERNET in merged manifest
         run: |
           ./gradlew :app:processReleaseMainManifest --no-daemon
-          MANIFEST=$(ls app/build/intermediates/merged_manifests/release/*/AndroidManifest.xml)
-          if grep -q "android.permission.INTERNET" "$MANIFEST"; then
-            echo "::error::INTERNET permission found in release merged manifest"
+          # AGP writes merged manifests to two dirs depending on task:
+          # processReleaseMainManifest -> merged_manifest/, full packaging ->
+          # merged_manifests/. On a fresh runner only the first exists.
+          MANIFEST=$(find app/build/intermediates/merged_manifest* \
+            -name AndroidManifest.xml -path "*release*" | head -1)
+          if [ -z "$MANIFEST" ]; then
+            echo "::error::Merged release manifest not found"
             exit 1
           fi
-          echo "OK: release merged manifest has no INTERNET permission."
-          echo "Permissions in merged manifest: $(grep -c 'uses-permission' "$MANIFEST" || true)"
+          if grep -q "android.permission.INTERNET" "$MANIFEST"; then
+            echo "::error::INTERNET permission found in $MANIFEST"
+            exit 1
+          fi
+          echo "OK: $MANIFEST has no INTERNET permission."
+          echo "Uses-permission entries in merged manifest: $(grep -c 'uses-permission' "$MANIFEST" || true)"
 
       - name: No network-capable code
         run: |
