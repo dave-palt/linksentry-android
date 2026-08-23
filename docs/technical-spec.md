@@ -79,15 +79,20 @@ clear, count.
 
 ## CI
 
-`dev-build.yml` (PR/push → develop): lint job (spotless + lintDebug) and
-build job (testDebugUnitTest, assembleDebug, guardrails, APK artifact, dev
-pre-release on push). PRs targeting `main` also run the checks.
+`dev-build.yml` (PR/push → develop): **security** job (zero permissions in
+source manifest, no INTERNET in the merged manifest via
+`processDebugMainManifest`, no `WebView|CustomTabsIntent|HttpClient|
+openConnection` in the main sourceset — one named check row per rule),
+lint job (spotless + lintDebug) and build job (testDebugUnitTest,
+assembleDebug, APK artifact, dev pre-release on push). PRs targeting
+`main` also run the checks.
 
-`prod-build.yml` (push → main with `paths-ignore` for docs/README/workflow-only changes, or manual dispatch): reads `versionName` from
+`prod-build.yml` (push → main with `paths-ignore` for docs/README/workflow-only changes, or manual dispatch): **security** job
+first (same three guardrails, `processReleaseMainManifest`; blocks the
+signed build), then the build job which reads `versionName` from
 `app/build.gradle.kts`, decodes the signing keystore from the
 `SIGNING_KEYSTORE_BASE64` secret, runs unit tests, builds signed
-`bundleRelease` + `assembleRelease`, re-runs the security guardrails against
-the **release** merged manifest, uploads AAB/APK artifacts (90 days), and
+`bundleRelease` + `assembleRelease`, uploads AAB/APK artifacts (90 days), and
 publishes a GitHub Release tagged `v<versionName>` with `LinkSentry-v<versionName>.apk` + `.aab`.
 
 Signing secrets: `SIGNING_KEYSTORE_BASE64` (the `.jks`, base64),
