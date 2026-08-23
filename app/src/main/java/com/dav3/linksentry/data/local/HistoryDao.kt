@@ -62,6 +62,10 @@ interface HistoryDao {
     @Query("DELETE FROM history WHERE id = :id")
     suspend fun deleteById(id: Long)
 
+    /** Delete an exact URL row (per-link history opt-out). */
+    @Query("DELETE FROM history WHERE url = :url")
+    suspend fun deleteByUrl(url: String): Int
+
     @Query("SELECT COUNT(*) FROM history")
     suspend fun count(): Int
 }

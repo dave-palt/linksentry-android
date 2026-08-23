@@ -3,12 +3,19 @@ package com.dav3.linksentry.ui.settings
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
@@ -18,6 +25,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -45,7 +53,27 @@ class SettingsViewModel @Inject constructor(
     private val actions: LinkActions,
     private val handlerPrefs: com.dav3.linksentry.domain.repository.HandlerPrefsRepository,
     private val dangerOverridesRepo: com.dav3.linksentry.domain.repository.DangerOverridesRepository,
+    private val demoRepo: com.dav3.linksentry.domain.repository.DemoRepository,
 ) : ViewModel() {
+
+    /** First-open tip; null until the flag is read. */
+    val demoTip = kotlinx.coroutines.flow.MutableStateFlow<Boolean?>(null)
+
+    init {
+        viewModelScope.launch {
+            demoTip.value = !demoRepo.isSeen(com.dav3.linksentry.domain.repository.DemoKey.SETTINGS)
+        }
+    }
+
+    fun dismissTip() {
+        demoTip.value = false
+        viewModelScope.launch { demoRepo.markSeen(com.dav3.linksentry.domain.repository.DemoKey.SETTINGS) }
+    }
+
+    /** Replay the intro tour next time Inspect opens (or a manual trigger). */
+    fun replayTour() {
+        viewModelScope.launch { demoRepo.unmarkSeen(com.dav3.linksentry.domain.repository.DemoKey.TOUR) }
+    }
     val settings = repository.settings
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), AppSettings())
 
@@ -87,11 +115,19 @@ class SettingsViewModel @Inject constructor(
 @Composable
 fun SettingsScreen(
     isDefaultBrowser: Boolean,
+    onReplayTour: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val settings by viewModel.settings.collectAsState()
     val overrides by viewModel.dangerOverrides.collectAsState()
+    val demoTip by viewModel.demoTip.collectAsState()
     SettingsContent(
+        demoTip = demoTip == true,
+        onDismissTip = viewModel::dismissTip,
+        onReplayTour = {
+            viewModel.replayTour()
+            onReplayTour()
+        },
         settings = settings,
         isDefaultBrowser = isDefaultBrowser,
         onSetRecordHistory = viewModel::setRecordHistory,
@@ -111,6 +147,9 @@ fun SettingsScreen(
 fun SettingsContent(
     settings: AppSettings,
     isDefaultBrowser: Boolean,
+    demoTip: Boolean = false,
+    onDismissTip: () -> Unit = {},
+    onReplayTour: () -> Unit = {},
     onSetRecordHistory: (Boolean) -> Unit,
     onSetRetention: (Int?) -> Unit,
     onSetTheme: (ThemeMode) -> Unit,
@@ -125,10 +164,38 @@ fun SettingsContent(
         Modifier
             .fillMaxWidth()
             .verticalScroll(rememberScrollState())
-            .padding(20.dp),
+            .padding(
+                start = 20.dp,
+                top = androidx.compose.foundation.layout.WindowInsets.statusBars
+                    .asPaddingValues()
+                    .calculateTopPadding() + 20.dp,
+                end = 20.dp,
+                bottom = 20.dp,
+            ),
         verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
         Text("Settings", style = MaterialTheme.typography.titleLarge)
+
+        if (demoTip) {
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                ),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Demo — this is Settings", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        "Tune recording, theme, handler layout and trusted links. Everything is stored on this device only.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextButton(onClick = onDismissTip) { Text("Got it") }
+                        OutlinedButton(onClick = onReplayTour) { Text("Replay intro tour") }
+                    }
+                }
+            }
+        }
 
         Card(
             colors = CardDefaults.cardColors(
@@ -231,8 +298,22 @@ fun SettingsContent(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                LayoutChip("List", com.dav3.linksentry.domain.model.HandlerLayout.LIST, settings, onSetHandlerLayout)
-                LayoutChip("Grid", com.dav3.linksentry.domain.model.HandlerLayout.GRID, settings, onSetHandlerLayout)
+                LayoutButton(
+                    label = "List",
+                    description = "Rows with app names",
+                    icon = { Icon(Icons.AutoMirrored.Filled.ViewList, contentDescription = null) },
+                    layout = com.dav3.linksentry.domain.model.HandlerLayout.LIST,
+                    settings = settings,
+                    onSetHandlerLayout = onSetHandlerLayout,
+                )
+                LayoutButton(
+                    label = "Grid",
+                    description = "Compact icon tiles",
+                    icon = { Icon(Icons.Filled.GridView, contentDescription = null) },
+                    layout = com.dav3.linksentry.domain.model.HandlerLayout.GRID,
+                    settings = settings,
+                    onSetHandlerLayout = onSetHandlerLayout,
+                )
             }
         }
 
@@ -274,18 +355,43 @@ fun SettingsContent(
     }
 }
 
+/** Layout picker button: icon makes the choice obvious at a glance. */
 @Composable
-private fun LayoutChip(
+private fun LayoutButton(
     label: String,
+    description: String,
+    icon: @Composable () -> Unit,
     layout: com.dav3.linksentry.domain.model.HandlerLayout,
     settings: AppSettings,
     onSetHandlerLayout: (com.dav3.linksentry.domain.model.HandlerLayout) -> Unit,
 ) {
-    FilterChip(
-        selected = settings.handlerLayout == layout,
+    val selected = settings.handlerLayout == layout
+    OutlinedButton(
         onClick = { onSetHandlerLayout(layout) },
-        label = { Text(label) },
-    )
+        colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(
+            containerColor = if (selected) {
+                MaterialTheme.colorScheme.secondaryContainer
+            } else {
+                androidx.compose.ui.graphics.Color.Transparent
+            },
+        ),
+        border = if (selected) {
+            androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
+        } else {
+            androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+        },
+    ) {
+        icon()
+        Spacer(Modifier.width(6.dp))
+        Column {
+            Text(label)
+            Text(
+                description,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
 }
 
 @Composable

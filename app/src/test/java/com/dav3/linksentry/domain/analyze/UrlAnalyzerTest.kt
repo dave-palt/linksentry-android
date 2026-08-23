@@ -334,4 +334,31 @@ class UrlAnalyzerTest {
         assertNull(v.worst)
         assertTrue(v.signals.isEmpty())
     }
+
+    @Test
+    fun upgradeScheme_rewrites_http_to_https_and_drops_port_80() {
+        val f = UrlAnalyzer.analyze("http://example.com:80/a?utm_source=x").facts
+        val upgraded = UrlAnalyzer.upgradeScheme(f)
+        assertEquals("https://example.com/a", upgraded.url)
+    }
+
+    @Test
+    fun upgradeScheme_leaves_https_untouched() {
+        val f = UrlAnalyzer.analyze("https://example.com/a").facts
+        assertEquals("https://example.com/a", UrlAnalyzer.upgradeScheme(f).url)
+    }
+
+    @Test
+    fun upgradeScheme_keeps_nonstandard_ports() {
+        val f = UrlAnalyzer.analyze("http://example.com:8080/a").facts
+        assertEquals("https://example.com:8080/a", UrlAnalyzer.upgradeScheme(f).url)
+    }
+
+    @Test
+    fun upgradeScheme_keeps_tracking_removals_in_tact() {
+        val f = UrlAnalyzer.analyze("http://example.com/a?utm_source=x").facts
+        val up = UrlAnalyzer.upgradeScheme(f)
+        assertEquals("https://example.com/a", up.url)
+        assertTrue(up.removals.any { it.category == com.dav3.linksentry.domain.model.CleanupCategory.TRACKING_PARAM })
+    }
 }

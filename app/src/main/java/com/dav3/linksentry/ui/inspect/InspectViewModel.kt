@@ -5,6 +5,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.dav3.linksentry.domain.analyze.UrlAnalyzer
 import com.dav3.linksentry.domain.model.DangerOverride
+import com.dav3.linksentry.domain.model.DemoLinks
+import com.dav3.linksentry.domain.model.DemoTour
 import com.dav3.linksentry.domain.model.HandlerApp
 import com.dav3.linksentry.domain.model.HistoryAction
 import com.dav3.linksentry.domain.model.LinkCleanup
@@ -14,6 +16,7 @@ import com.dav3.linksentry.domain.model.Severity
 import com.dav3.linksentry.domain.model.UrlFacts
 import com.dav3.linksentry.domain.model.Verdict
 import com.dav3.linksentry.domain.repository.DangerOverridesRepository
+import com.dav3.linksentry.domain.repository.DemoKey
 import com.dav3.linksentry.domain.repository.HandlerPrefsRepository
 import com.dav3.linksentry.domain.repository.HistoryRepository
 import com.dav3.linksentry.domain.repository.SettingsRepository
@@ -70,7 +73,20 @@ sealed interface InspectUiState {
         val confirmApp: HandlerApp? = null,
         /** True when a stored override silenced the gate for this link. */
         val overrideActive: Boolean = false,
+        /** Non-null while the guided tour runs: current step + progress. */
+        val tour: TourState? = null,
+        /** User checked "always open over https" for this session. */
+        val enforceHttps: Boolean = false,
+        /** True when this exact URL is opted out of history recording. */
+        val historyExcluded: Boolean = false,
     ) : InspectUiState
+
+    /** Guided-tour progress; [index] is into [DemoTour.steps]. */
+    data class TourState(
+        val index: Int = 0,
+        /** Set when a demo action fired; UI shows a transient notice. */
+        val notice: String? = null,
+    )
 
     /** Submitted text could not be parsed as a URL. */
     data class Invalid(val input: String) : InspectUiState
@@ -85,10 +101,87 @@ class InspectViewModel @Inject constructor(
     private val roleChecker: BrowserRoleChecker,
     private val handlerPrefs: HandlerPrefsRepository,
     private val dangerOverrides: DangerOverridesRepository,
+    private val demoRepo: com.dav3.linksentry.domain.repository.DemoRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<InspectUiState>(InspectUiState.Manual())
     val uiState: StateFlow<InspectUiState> = _uiState.asStateFlow()
+
+    init {
+        // Immich-style "forced" intro: the tour starts by itself the very
+        // first time the app is opened, walking every Inspect section with
+        // fake data. Sandbox: nothing launches, nothing persists.
+        viewModelScope.launch {
+            if (!demoRepo.isSeen(DemoKey.TOUR)) {
+                startTour()
+            }
+        }
+    }
+
+    /** Starts (or replays) the guided tour from step 0. */
+    fun startTour() {
+        viewModelScope.launch { applyTourStep(0) }
+    }
+
+    /** Advances the tour (Next / Skip). Ends: marks seen + back to Manual. */
+    fun advanceTour() {
+        val state = _uiState.value
+        if (state !is InspectUiState.Inspect) return
+        val tour = state.tour ?: return
+        val next = tour.index + 1
+        if (next >= DemoTour.steps.size) {
+            endTour(markSeen = true)
+        } else {
+            applyTourStep(next)
+        }
+    }
+
+    /** Ends the tour early; [markSeen] false when only skipping for now. */
+    fun skipTour() {
+        endTour(markSeen = true)
+    }
+
+    private fun endTour(markSeen: Boolean) {
+        _uiState.value = InspectUiState.Manual(isDefaultBrowser = roleChecker.isDefaultBrowser())
+        if (markSeen) {
+            viewModelScope.launch { demoRepo.markSeen(DemoKey.TOUR) }
+        }
+    }
+
+    /** Loads [index]'s URL through the analyzer and attaches tour state. */
+    private fun applyTourStep(index: Int) {
+        viewModelScope.launch {
+            val step = DemoTour.steps[index]
+            val analysis = UrlAnalyzer.analyze(step.url)
+            _uiState.value = InspectUiState.Inspect(
+                url = analysis.facts.raw,
+                facts = analysis.facts,
+                verdict = analysis.verdict,
+                handlers = DemoTour.fakeHandlers,
+                cleanedUrl = UrlAnalyzer.cleanedUrl(analysis.facts),
+                cleanup = UrlAnalyzer.cleanup(analysis.facts),
+                input = analysis.facts.raw,
+                dangerGate = analysis.verdict.worst == Severity.DANGER,
+                tour = InspectUiState.TourState(index = index),
+            )
+        }
+    }
+
+    /** Shows a transient demo notice (tour sandbox). */
+    private fun notice(message: String) {
+        val state = _uiState.value
+        if (state is InspectUiState.Inspect) {
+            _uiState.value = state.copy(tour = state.tour?.copy(notice = message))
+        }
+    }
+
+    /** Clears a transient demo notice. */
+    fun clearNotice() {
+        val state = _uiState.value
+        if (state is InspectUiState.Inspect) {
+            _uiState.value = state.copy(tour = state.tour?.copy(notice = null))
+        }
+    }
 
     fun submit(uri: Uri?) {
         if (uri == null) return
@@ -146,7 +239,7 @@ class InspectViewModel @Inject constructor(
             val overrideActive = hostOverride || signalsOverride
             val settingsNow = settingsRepo.settings.first()
             val custom = settingsNow.customTrackingParams
-            _uiState.value = InspectUiState.Inspect(
+            val newState = InspectUiState.Inspect(
                 url = analysis.facts.raw,
                 facts = analysis.facts,
                 verdict = analysis.verdict,
@@ -157,19 +250,33 @@ class InspectViewModel @Inject constructor(
                 customTracking = custom,
                 dangerGate = analysis.verdict.worst == Severity.DANGER && !overrideActive,
                 overrideActive = overrideActive,
+                historyExcluded = analysis.facts.raw in settingsNow.historyExclusions,
             )
-            history.record(
-                url = analysis.facts.raw,
-                host = analysis.facts.host,
-                severity = analysis.verdict.worst,
-                action = HistoryAction.INSPECTED,
-            )
+            _uiState.value = newState
+            // Sandbox: regular inspections are recorded; tour navigation is
+            // not (tour states are built by applyTourStep, which never records).
+            // Demo links and user-excluded URLs never touch history.
+            if (!DemoLinks.isDemo(analysis.facts.raw) &&
+                analysis.facts.raw !in settingsNow.historyExclusions
+            ) {
+                history.record(
+                    url = analysis.facts.raw,
+                    host = analysis.facts.host,
+                    severity = analysis.verdict.worst,
+                    action = HistoryAction.INSPECTED,
+                )
+            }
         }
     }
 
     fun openWith(app: HandlerApp) {
         val state = _uiState.value
         if (state !is InspectUiState.Inspect) return
+        // Tour sandbox: tapping a handler only explains what would happen.
+        if (state.tour != null) {
+            notice("Demo: would open in " + app.label + (if (app.isBrowser) " (browser)" else ""))
+            return
+        }
         // Pseudo entries (copy/share actions) never launch an app.
         when (app.packageName) {
             PseudoHandler.COPY -> {
@@ -224,7 +331,13 @@ class InspectViewModel @Inject constructor(
     fun bypassGate() {
         val state = _uiState.value
         if (state !is InspectUiState.Inspect) return
-        _uiState.value = state.copy(dangerGate = false)
+        if (state.tour != null) {
+            // During the tour the gate can be revealed for exploration, but
+            // nothing is ever persisted.
+            _uiState.value = state.copy(dangerGate = false, tour = state.tour.copy(notice = "Demo: the app list is now revealed"))
+        } else {
+            _uiState.value = state.copy(dangerGate = false)
+        }
     }
 
     /** Revoke the stored override from within a link view ("Previously
@@ -262,47 +375,80 @@ class InspectViewModel @Inject constructor(
     }
 
     private fun launchAndRecord(state: InspectUiState.Inspect, app: HandlerApp) {
-        val target = if (state.openCleaned) state.cleanup.url else state.url
+        if (state.tour != null) return // unreachable: openWith sandboxes first
+        // Enforce https: handlers open the upgraded URL when checked.
+        val target = effectiveUrl(state)
         if (actions.openWith(app, target)) {
             viewModelScope.launch {
                 // Persist usage so the picker reorders launcher-style:
                 // domain preference outranks scheme-wide preference.
                 handlerPrefs.recordUse(HandlerRanker.domainKey(state.facts.host), app.packageName)
                 handlerPrefs.recordUse(HandlerRanker.schemeKey(state.facts.scheme), app.packageName)
-                history.record(state.url, state.facts.host, state.verdict.worst, HistoryAction.OPENED_WITH)
-                // Remember the handler so History can re-open directly.
-                history.recordApp(state.url, app.packageName, app.activityName, app.label)
+                if (shouldRecord(state)) {
+                    history.record(state.url, state.facts.host, state.verdict.worst, HistoryAction.OPENED_WITH)
+                    // Remember the handler so History can re-open directly.
+                    history.recordApp(state.url, app.packageName, app.activityName, app.label)
+                }
             }
         }
     }
 
+    /** The URL handlers actually open: cleaned / https-enforced / raw. */
+    private fun effectiveUrl(state: InspectUiState.Inspect): String {
+        var url = if (state.openCleaned) state.cleanup.url else state.url
+        if (state.enforceHttps) {
+            url = UrlAnalyzer.upgradeScheme(UrlAnalyzer.analyze(url).facts).url
+        }
+        return url
+    }
+
+    private fun shouldRecord(state: InspectUiState.Inspect): Boolean = !DemoLinks.isDemo(state.url) && !state.historyExcluded
+
     fun copyUrl() {
         val state = _uiState.value
         if (state !is InspectUiState.Inspect) return
+        if (state.tour != null) {
+            notice("Demo: the link would be copied to the clipboard")
+            return
+        }
         actions.copy(state.url)
         viewModelScope.launch {
             handlerPrefs.recordUse(HandlerRanker.pseudoKey(state.facts.host), PseudoHandler.COPY)
-            history.record(state.url, state.facts.host, state.verdict.worst, HistoryAction.COPIED)
+            if (shouldRecord(state)) {
+                history.record(state.url, state.facts.host, state.verdict.worst, HistoryAction.COPIED)
+            }
         }
     }
 
     fun copyCleaned() {
         val state = _uiState.value
         if (state !is InspectUiState.Inspect) return
+        if (state.tour != null) {
+            notice("Demo: the cleaned link would be copied")
+            return
+        }
         actions.copy(state.cleanup.url)
         viewModelScope.launch {
             handlerPrefs.recordUse(HandlerRanker.pseudoKey(state.facts.host), PseudoHandler.COPY_CLEANED)
-            history.record(state.url, state.facts.host, state.verdict.worst, HistoryAction.COPIED_CLEANED)
+            if (shouldRecord(state)) {
+                history.record(state.url, state.facts.host, state.verdict.worst, HistoryAction.COPIED_CLEANED)
+            }
         }
     }
 
     fun share() {
         val state = _uiState.value
         if (state !is InspectUiState.Inspect) return
-        actions.share(if (state.openCleaned) state.cleanup.url else state.url)
+        if (state.tour != null) {
+            notice("Demo: the Android share sheet would open")
+            return
+        }
+        actions.share(effectiveUrl(state))
         viewModelScope.launch {
             handlerPrefs.recordUse(HandlerRanker.pseudoKey(state.facts.host), PseudoHandler.SHARE)
-            history.record(state.url, state.facts.host, state.verdict.worst, HistoryAction.SHARED)
+            if (shouldRecord(state)) {
+                history.record(state.url, state.facts.host, state.verdict.worst, HistoryAction.SHARED)
+            }
         }
     }
 
@@ -443,6 +589,33 @@ class InspectViewModel @Inject constructor(
         val state = _uiState.value
         if (state !is InspectUiState.Inspect) return
         _uiState.value = state.copy(openCleaned = !state.openCleaned)
+    }
+
+    /** Session toggle: handlers open an https-upgraded URL when checked. */
+    fun toggleEnforceHttps() {
+        val state = _uiState.value
+        if (state !is InspectUiState.Inspect) return
+        _uiState.value = state.copy(enforceHttps = !state.enforceHttps)
+    }
+
+    /**
+     * Per-link history opt-out (user: "an option to not store in history a
+     * specific link"). Persists the exclusion; enabling also deletes any
+     * existing rows for this exact URL so the past disappears with it.
+     */
+    fun toggleHistoryExcluded() {
+        val state = _uiState.value
+        if (state !is InspectUiState.Inspect) return
+        val next = !state.historyExcluded
+        _uiState.value = state.copy(historyExcluded = next)
+        viewModelScope.launch {
+            if (next) {
+                settingsRepo.excludeUrlFromHistory(state.url)
+                history.deleteByUrl(state.url)
+            } else {
+                settingsRepo.unexcludeUrlFromHistory(state.url)
+            }
+        }
     }
 
     /** Reset this domain's handler sorting (per-domain reset). */

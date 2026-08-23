@@ -84,7 +84,14 @@ fun LinkSentryNavHost(
     }
     val roleVm: RoleViewModel = hiltViewModel()
 
+    // Replay-tour request from Settings: cleared once the tour restarts.
+    var replayTour by remember { mutableStateOf(false) }
+
     Scaffold(
+        // Edge-to-edge: each screen's scroll container owns its status-bar
+        // padding (scrolls under the transparent status bar); the Scaffold
+        // itself must not pre-pad content (that caused the tall header).
+        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
         bottomBar = {
             if (currentRoute != Dest.NEW_URL) {
                 NavigationBar {
@@ -139,6 +146,8 @@ fun LinkSentryNavHost(
                     },
                     onInspectNew = { navController.navigate(Dest.NEW_URL) },
                     handlerLayout = appSettings.handlerLayout,
+                    replayTour = replayTour,
+                    onTourRestarted = { replayTour = false },
                 )
             }
             composable(Dest.NEW_URL) {
@@ -165,7 +174,16 @@ fun LinkSentryNavHost(
                     roleVm.refresh()
                     onPauseOrDispose { }
                 }
-                SettingsScreen(isDefaultBrowser = isDefault)
+                SettingsScreen(
+                    isDefaultBrowser = isDefault,
+                    onReplayTour = {
+                        replayTour = true
+                        navController.navigate(Dest.INSPECT) {
+                            popUpTo(Dest.INSPECT) { inclusive = false }
+                            launchSingleTop = true
+                        }
+                    },
+                )
             }
         }
     }
