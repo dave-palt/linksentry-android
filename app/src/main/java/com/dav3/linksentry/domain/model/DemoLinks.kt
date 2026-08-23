@@ -16,7 +16,8 @@ data object DemoLinks {
      *  are never written to history (user: "let's not store in history
      *  any of the demo links"). */
     fun isDemo(url: String): Boolean = all.any { it.url == url } ||
-        url == DemoTour.URL_CLEAN || url == DemoTour.URL_DANGER
+        url == DemoTour.URL_CLEAN ||
+        url == DemoTour.URL_DANGER
 
     /** A normal shopping link littered with tracker parameters. */
     const val TRACKING: String =
