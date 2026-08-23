@@ -43,4 +43,8 @@ abstract class AppModule {
     @Binds
     @Singleton
     abstract fun bindDangerOverridesRepository(impl: com.dav3.linksentry.data.local.DangerOverridesRepositoryImpl): com.dav3.linksentry.domain.repository.DangerOverridesRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindDemoRepository(impl: com.dav3.linksentry.data.local.DemoRepositoryImpl): com.dav3.linksentry.domain.repository.DemoRepository
 }

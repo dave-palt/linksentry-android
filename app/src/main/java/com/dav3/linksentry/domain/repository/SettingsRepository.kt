@@ -21,4 +21,10 @@ interface SettingsRepository {
 
     /** Forget a user-taught tracker param. */
     suspend fun removeCustomTrackingParam(name: String)
+
+    /** Opt one exact URL out of history recording. */
+    suspend fun excludeUrlFromHistory(url: String)
+
+    /** Re-enable history recording for one exact URL. */
+    suspend fun unexcludeUrlFromHistory(url: String)
 }

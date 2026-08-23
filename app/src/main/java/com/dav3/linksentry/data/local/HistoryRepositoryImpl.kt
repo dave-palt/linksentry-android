@@ -95,6 +95,8 @@ class HistoryRepositoryImpl @Inject constructor(
         dao.deleteById(id)
     }
 
+    override suspend fun deleteByUrl(url: String): Int = dao.deleteByUrl(url)
+
     override suspend fun clear() {
         dao.clear()
     }

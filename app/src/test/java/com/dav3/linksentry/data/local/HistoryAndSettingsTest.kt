@@ -130,6 +130,12 @@ class HistoryAndSettingsTest {
 
         override suspend fun deleteById(id: Long) {}
 
+        override suspend fun deleteByUrl(url: String): Int {
+            val before = inserts.size
+            inserts.removeAll { it.url == url }
+            return before - inserts.size
+        }
+
         override suspend fun count(): Int = inserts.size
 
         override suspend fun bumpOpened(url: String, ts: Long, severity: String?): Int = 0
@@ -168,5 +174,33 @@ class HistoryAndSettingsTest {
         override suspend fun addCustomTrackingParam(name: String) {}
 
         override suspend fun removeCustomTrackingParam(name: String) {}
+
+        override suspend fun excludeUrlFromHistory(url: String) {}
+
+        override suspend fun unexcludeUrlFromHistory(url: String) {}
+    }
+
+    @Test
+    fun `history exclusion round trip`() = runTest {
+        val repo = SettingsRepositoryImpl(context)
+        repo.excludeUrlFromHistory("https://example.com/private?a=1")
+        repo.excludeUrlFromHistory("https://other.org/x")
+        assertEquals(
+            setOf("https://example.com/private?a=1", "https://other.org/x"),
+            repo.settings.first().historyExclusions,
+        )
+        repo.unexcludeUrlFromHistory("https://example.com/private?a=1")
+        assertEquals(setOf("https://other.org/x"), repo.settings.first().historyExclusions)
+    }
+
+    @Test
+    fun `repository deleteByUrl removes only that row`() = runTest {
+        val dao = FakeDao()
+        val repo = HistoryRepositoryImpl(dao, FakeSettingsRepo(AppSettings()))
+        repo.record("https://a.com/1", "a.com", null, HistoryAction.INSPECTED)
+        repo.record("https://b.org/2", "b.org", null, HistoryAction.INSPECTED)
+        val removed = repo.deleteByUrl("https://a.com/1")
+        assertEquals(1, removed)
+        assertEquals(listOf("https://b.org/2"), dao.inserts.map { it.url })
     }
 }

@@ -1,5 +1,6 @@
 package com.dav3.linksentry.ui.inspect
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -7,12 +8,18 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.absoluteOffset
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -32,6 +39,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -41,7 +49,9 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -49,13 +59,28 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathFillType
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.dav3.linksentry.domain.analyze.UrlAnalyzer
 import com.dav3.linksentry.domain.model.CleanupCategory
+import com.dav3.linksentry.domain.model.DemoLinks
+import com.dav3.linksentry.domain.model.DemoTour
 import com.dav3.linksentry.domain.model.HandlerApp
 import com.dav3.linksentry.domain.model.ParamBehavior
 import com.dav3.linksentry.domain.model.PseudoHandler
@@ -63,7 +88,9 @@ import com.dav3.linksentry.domain.model.Severity
 import com.dav3.linksentry.domain.model.Severity.DANGER
 import com.dav3.linksentry.domain.model.Severity.INFO
 import com.dav3.linksentry.domain.model.Severity.WARN
+import com.dav3.linksentry.domain.model.SignalId
 import com.dav3.linksentry.domain.model.UrlParam
+import kotlin.math.roundToInt
 
 /**
  * State-driven Inspect UI — no ViewModel inside, previewable and testable.
@@ -78,6 +105,7 @@ fun InspectContent(
     onReinspect: () -> Unit,
     onManualInput: (String) -> Unit,
     onSubmitManual: () -> Unit = {},
+    onSubmitDemo: (String) -> Unit = {},
     onOpenBrowserSettings: () -> Unit = {},
     onInspectNew: () -> Unit = {},
     handlerLayout: com.dav3.linksentry.domain.model.HandlerLayout = com.dav3.linksentry.domain.model.HandlerLayout.LIST,
@@ -93,10 +121,20 @@ fun InspectContent(
     onConfirmOpen: (Boolean) -> Unit = {},
     onCancelConfirm: () -> Unit = {},
     onRevokeOverride: () -> Unit = {},
+    onAdvanceTour: () -> Unit = {},
+    onSkipTour: () -> Unit = {},
+    onToggleEnforceHttps: () -> Unit = {},
+    onToggleHistoryExcluded: () -> Unit = {},
+    statusBarInset: androidx.compose.ui.unit.Dp = 0.dp,
     modifier: Modifier = Modifier,
 ) {
+    val resolvedInset = if (statusBarInset > 0.dp) {
+        statusBarInset
+    } else {
+        WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    }
     when (state) {
-        is InspectUiState.Manual -> ManualContent(state, onManualInput, onSubmitManual, onOpenBrowserSettings, modifier)
+        is InspectUiState.Manual -> ManualContent(state, onManualInput, onSubmitManual, onSubmitDemo, onOpenBrowserSettings, resolvedInset, modifier)
         is InspectUiState.Inspect -> InspectedContent(
             state,
             onOpenApp,
@@ -118,9 +156,13 @@ fun InspectContent(
             onConfirmOpen,
             onCancelConfirm,
             onRevokeOverride,
+            onAdvanceTour,
+            onSkipTour,
+            onToggleEnforceHttps,
+            onToggleHistoryExcluded,
             modifier,
         )
-        is InspectUiState.Invalid -> InvalidContent(state, onReinspect, modifier)
+        is InspectUiState.Invalid -> InvalidContent(state, onReinspect, resolvedInset, modifier)
     }
 }
 
@@ -129,13 +171,15 @@ private fun ManualContent(
     state: InspectUiState.Manual,
     onManualInput: (String) -> Unit,
     onSubmitManual: () -> Unit,
+    onSubmitDemo: (String) -> Unit,
     onOpenBrowserSettings: () -> Unit,
+    statusBarInset: androidx.compose.ui.unit.Dp = 0.dp,
     modifier: Modifier = Modifier,
 ) {
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .padding(20.dp),
+            .padding(start = 20.dp, top = statusBarInset + 20.dp, end = 20.dp, bottom = 20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Text(
@@ -172,6 +216,29 @@ private fun ManualContent(
         ) {
             Text("Inspect link")
         }
+
+        // Demo / "try it": curated sample links run through the REAL
+        // analyzer — one tap, no setup, no network (Immich-style demo).
+        Text(
+            "No link at hand? Try a sample:",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        DemoLinkChips(onSubmitDemo)
+    }
+}
+
+@Composable
+private fun DemoLinkChips(onSubmitDemo: (String) -> Unit) {
+    androidx.compose.foundation.layout.FlowRow(
+        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
+    ) {
+        DemoLinks.all.forEach { sample ->
+            androidx.compose.material3.SuggestionChip(
+                onClick = { onSubmitDemo(sample.url) },
+                label = { Text(sample.label) },
+            )
+        }
     }
 }
 
@@ -197,25 +264,96 @@ private fun InspectedContent(
     onConfirmOpen: (Boolean) -> Unit = {},
     onCancelConfirm: () -> Unit = {},
     onRevokeOverride: () -> Unit = {},
+    onAdvanceTour: () -> Unit = {},
+    onSkipTour: () -> Unit = {},
+    onToggleEnforceHttps: () -> Unit = {},
+    onToggleHistoryExcluded: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
+    val tour = state.tour
+    // Status-bar inset (single consumer of the outer Scaffold's insets —
+    // the inner Scaffold zeroes its own; see InspectScreen).
+    val statusBarInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    val tourTarget = tour?.let { DemoTour.steps[it.index].target }
+    // Live bounds (root coords) of each tourable section, keyed by target.
+    val sectionBounds = remember { mutableStateMapOf<DemoTour.Target, Rect>() }
+    val overlayHostSize = remember { mutableStateOf(Size.Zero) }
+    // Auto-scroll the highlighted section into view as steps advance; after
+    // the item scroll, fine-scroll again so the anchor's live bounds land in
+    // the visible area (the anchor may sit mid-item).
+    LaunchedEffect(tourTarget, state.dangerGate) {
+        if (tour != null && tourTarget != null) {
+            val idx = when (tourTarget) {
+                DemoTour.Target.WELCOME,
+                DemoTour.Target.HERO,
+                DemoTour.Target.BREAKDOWN,
+                DemoTour.Target.CLEANUP,
+                DemoTour.Target.SWITCH,
+                DemoTour.Target.FINISH,
+                -> 0
+                DemoTour.Target.GATE -> if (state.dangerGate) 1 else 0
+                DemoTour.Target.SIGNALS -> if (state.dangerGate) 0 else 1
+                DemoTour.Target.APPS -> if (state.dangerGate) 0 else 2
+            }
+            listState.animateScrollToItem(idx)
+        }
+    }
+    // Hero auto-expand is a per-step NUDGE (handled inside LinkOverviewCard):
+    // expand once when the step starts so the anchors exist, then the user's
+    // own tap wins for the rest of the step (user request: tapping the
+    // breakdown/cleanup section must toggle it during the tour).
+    val heroAutoExpandKey = when (tourTarget) {
+        DemoTour.Target.BREAKDOWN, DemoTour.Target.CLEANUP -> tour?.index
+        else -> null
+    }
+
     Box(modifier = modifier.fillMaxWidth()) {
         LazyColumn(
+            state = listState,
             modifier = Modifier.fillMaxWidth(),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(
                 start = 20.dp,
-                top = 20.dp,
+                top = statusBarInset + 8.dp,
                 end = 20.dp,
                 bottom = 96.dp, // room for the FAB
             ),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            item { LinkOverviewCard(state, onEditUrl, onToggleKeepParam, onToggleKeepCredentials, onToggleOpenCleaned, onToggleRemoveParam, onMarkParamAsTracking) }
+            item(key = "hero") {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .onGloballyPositioned { sectionBounds[DemoTour.Target.HERO] = it.boundsInRoot() },
+                ) {
+                    LinkOverviewCard(
+                        state,
+                        onEditUrl,
+                        onToggleKeepParam,
+                        onToggleKeepCredentials,
+                        onToggleOpenCleaned,
+                        onToggleRemoveParam,
+                        onMarkParamAsTracking,
+                        onToggleEnforceHttps,
+                        onToggleHistoryExcluded,
+                        autoExpandKey = heroAutoExpandKey,
+                        sectionBounds = sectionBounds,
+                    )
+                }
+            }
             if (state.dangerGate) {
-                // Dangerous link: app list hidden behind explicit
+                // Dangerous link: app grid hidden behind explicit
                 // confirmation (user: "explicitly prevent the user from
-                // reaching the app list right away").
-                item { DangerGateCard(state, onBypassGate, onTrustHostForever) }
+                // reaching the app grid right away").
+                item(key = "gate") {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .onGloballyPositioned { sectionBounds[DemoTour.Target.GATE] = it.boundsInRoot() },
+                    ) {
+                        DangerGateCard(state, onBypassGate, onTrustHostForever)
+                    }
+                }
             } else {
                 if (state.overrideActive) {
                     item {
@@ -238,8 +376,13 @@ private fun InspectedContent(
             }
 
             if (!state.dangerGate && state.verdict.signals.isNotEmpty()) {
-                item {
-                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                item(key = "signals") {
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .onGloballyPositioned { sectionBounds[DemoTour.Target.SIGNALS] = it.boundsInRoot() },
+                    ) {
                         Text("What we noticed", style = MaterialTheme.typography.titleMedium)
                         state.verdict.signals.forEach { signal ->
                             SignalRow(signal.severity, signal.display())
@@ -248,8 +391,13 @@ private fun InspectedContent(
                 }
             }
             if (!state.dangerGate) {
-                item {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                item(key = "apps") {
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .onGloballyPositioned { sectionBounds[DemoTour.Target.APPS] = it.boundsInRoot() },
+                    ) {
                         Text("Open with", style = MaterialTheme.typography.titleMedium)
                         if (state.handlers.isEmpty()) {
                             Text(
@@ -275,6 +423,14 @@ private fun InspectedContent(
                     }
                 }
             }
+        }
+        if (tour != null) {
+            TourOverlay(
+                tour = tour,
+                sectionBounds = sectionBounds,
+                onAdvance = onAdvanceTour,
+                onSkip = onSkipTour,
+            )
         }
         // Single "add new" affordance — replaces the old top button and
         // bottom text button.
@@ -373,8 +529,19 @@ private fun LinkOverviewCard(
     onToggleOpenCleaned: () -> Unit,
     onToggleRemoveParam: (String) -> Unit,
     onMarkParamAsTracking: (String) -> Unit,
+    onToggleEnforceHttps: () -> Unit = {},
+    onToggleHistoryExcluded: () -> Unit = {},
+    autoExpandKey: Int? = null,
+    sectionBounds: MutableMap<DemoTour.Target, Rect>? = null,
 ) {
-    var expanded by rememberSaveable(state.url) { mutableStateOf(false) }
+    var userExpanded by rememberSaveable(state.url) { mutableStateOf(false) }
+    // Tour nudge: expand ONCE when the tour step pointing inside this card
+    // starts (key change), then leave the toggle to the user — tapping the
+    // section collapses it even mid-tour, and the next step re-nudges.
+    LaunchedEffect(autoExpandKey) {
+        if (autoExpandKey != null) userExpanded = true
+    }
+    val expanded = userExpanded
     var editing by remember { mutableStateOf(false) }
     var draft by remember(state.url) { mutableStateOf(state.input) }
     val worst = state.verdict.worst
@@ -450,7 +617,7 @@ private fun LinkOverviewCard(
                 )
             }
             Surface(
-                onClick = { expanded = !expanded },
+                onClick = { userExpanded = !userExpanded },
                 shape = RoundedCornerShape(10.dp),
                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
                 border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
@@ -460,8 +627,9 @@ private fun LinkOverviewCard(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { expanded = !expanded }
-                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                        .clickable { userExpanded = !userExpanded }
+                        .padding(horizontal = 12.dp, vertical = 10.dp)
+                        .onGloballyPositioned { sectionBounds?.set(DemoTour.Target.BREAKDOWN, it.boundsInRoot()) },
                 ) {
                     Text(
                         if (expanded) "Hide URL breakdown" else "Show URL breakdown",
@@ -479,12 +647,39 @@ private fun LinkOverviewCard(
             if (expanded) {
                 HorizontalDivider()
                 // --- full URL breakdown with per-param control ---
+                // Risk coloring derives from the ANALYZER's signals, not
+                // re-derived heuristics (single source of truth).
                 state.facts.userInfo?.let {
                     BreakdownRow("Credentials", it, CleanupCategory.CREDENTIALS)
                 }
-                BreakdownRow("Scheme", state.facts.scheme)
-                BreakdownRow("Host", state.facts.rawHost.ifEmpty { "—" })
-                if (state.facts.port != -1) BreakdownRow("Port", state.facts.port.toString())
+                BreakdownRow(
+                    "Scheme",
+                    state.facts.scheme,
+                    color = when (state.facts.scheme) {
+                        "https" -> PositiveGreen
+                        "http" -> WarnAmber
+                        else -> null
+                    },
+                )
+                BreakdownRow(
+                    "Host",
+                    state.facts.rawHost.ifEmpty { "—" },
+                    color = when {
+                        state.verdict.has(SignalId.IP_LITERAL_HOST) -> DangerRed
+                        state.verdict.has(SignalId.SHORTENER_HOST) -> WarnAmber
+                        else -> null
+                    },
+                )
+                if (state.facts.port != -1) {
+                    BreakdownRow(
+                        "Port",
+                        state.facts.port.toString(),
+                        color = when {
+                            state.verdict.has(SignalId.NONSTANDARD_PORT) -> WarnAmber
+                            else -> null
+                        },
+                    )
+                }
                 BreakdownRow("Path", state.facts.path.ifEmpty { "/" })
                 state.facts.params.forEach { p ->
                     BreakdownParamRow(
@@ -498,72 +693,109 @@ private fun LinkOverviewCard(
             }
             if (expanded && state.cleanup.removals.isNotEmpty()) {
                 HorizontalDivider()
-                Text("Clean this link", style = MaterialTheme.typography.titleSmall)
-                Text(
-                    "These parts can be removed before you open or copy the link:",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                // Credentials stay here (not a query param): keep/remove.
-                state.facts.userInfo?.let {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Surface(
-                            color = CleanupCategory.CREDENTIALS.color(),
-                            shape = CircleShape,
-                            modifier = Modifier.size(10.dp),
-                        ) {}
-                        Spacer(Modifier.width(10.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(
-                                it,
-                                fontFamily = FontFamily.Monospace,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = if (state.keepCredentials) {
-                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                } else {
-                                    CleanupCategory.CREDENTIALS.color()
-                                },
-                            )
-                            Text(
-                                "Credentials embedded in the link",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        TextButton(onClick = onToggleKeepCredentials) {
-                            Text(if (state.keepCredentials) "Remove" else "Keep")
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .onGloballyPositioned { sectionBounds?.set(DemoTour.Target.CLEANUP, it.boundsInRoot()) },
+                ) {
+                    Text("Clean this link", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        "These parts can be removed before you open or copy the link:",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    // Credentials stay here (not a query param): keep/remove.
+                    state.facts.userInfo?.let {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Surface(
+                                color = CleanupCategory.CREDENTIALS.color(),
+                                shape = CircleShape,
+                                modifier = Modifier.size(10.dp),
+                            ) {}
+                            Spacer(Modifier.width(10.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    it,
+                                    fontFamily = FontFamily.Monospace,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = if (state.keepCredentials) {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    } else {
+                                        CleanupCategory.CREDENTIALS.color()
+                                    },
+                                )
+                                Text(
+                                    "Credentials embedded in the link",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            TextButton(onClick = onToggleKeepCredentials) {
+                                Text(if (state.keepCredentials) "Remove" else "Keep")
+                            }
                         }
                     }
-                }
-                Text("Cleaned link", style = MaterialTheme.typography.labelMedium)
-                Text(
-                    state.cleanup.url,
-                    fontFamily = FontFamily.Monospace,
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Switch(checked = state.openCleaned, onCheckedChange = { onToggleOpenCleaned() })
-                Spacer(Modifier.width(8.dp))
-                Column {
-                    Text("Open cleaned link", style = MaterialTheme.typography.bodyMedium)
+                    Text("Cleaned link", style = MaterialTheme.typography.labelMedium)
                     Text(
-                        "Handlers below open the cleaned URL while enabled",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        state.cleanup.url,
+                        fontFamily = FontFamily.Monospace,
+                        style = MaterialTheme.typography.bodySmall,
                     )
                 }
             }
+            LabeledToggleRow(
+                label = "Open cleaned link",
+                supporting = "Handlers below open the cleaned URL while enabled",
+                checked = state.openCleaned,
+                onCheckedChange = { onToggleOpenCleaned() },
+                sectionBounds = sectionBounds,
+                tourTarget = DemoTour.Target.SWITCH,
+            )
+            // Enforce HTTPS (user idea): colorized scheme makes http visible;
+            // the checkbox upgrades the URL handlers open.
+            if (state.facts.scheme == "http") {
+                LabeledToggleRow(
+                    label = "Enforce HTTPS",
+                    supporting = "Upgrade this link to https before opening",
+                    checked = state.enforceHttps,
+                    onCheckedChange = { onToggleEnforceHttps() },
+                )
+            }
+            // Per-link history opt-out (user: "an option to not store in
+            // history a specific link"). Demo links are always off and say so.
+            LabeledToggleRow(
+                label = "Keep out of history",
+                supporting = if (DemoLinks.isDemo(state.url)) {
+                    "Demo links are never recorded"
+                } else {
+                    "This exact link is not saved to history"
+                },
+                checked = state.historyExcluded || DemoLinks.isDemo(state.url),
+                enabled = !DemoLinks.isDemo(state.url),
+                onCheckedChange = { onToggleHistoryExcluded() },
+            )
             // --- final URL that will actually open, AFTER the open-cleaned
             //     switch (user request), reflecting its state ---
             HorizontalDivider()
+            val willOpen = when {
+                state.openCleaned && state.enforceHttps -> "Will open (cleaned, https)"
+                state.openCleaned -> "Will open (cleaned)"
+                state.enforceHttps -> "Will open (https)"
+                else -> "Will open"
+            }
             Text(
-                if (state.openCleaned) "Will open (cleaned)" else "Will open",
+                willOpen,
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Text(
-                if (state.openCleaned) state.cleanup.url else state.facts.raw,
+                when {
+                    state.openCleaned && state.enforceHttps ->
+                        UrlAnalyzer.upgradeScheme(state.facts).url
+                    state.openCleaned -> state.cleanup.url
+                    state.enforceHttps -> UrlAnalyzer.upgradeScheme(state.facts).url
+                    else -> state.facts.raw
+                },
                 style = MaterialTheme.typography.bodySmall,
                 fontFamily = FontFamily.Monospace,
             )
@@ -706,6 +938,11 @@ private fun CleanupCategory.color(): Color = when (this) {
     CleanupCategory.CREDENTIALS -> Color(0xFFDC2626)
     CleanupCategory.TRACKING_PARAM -> Color(0xFF2563EB)
 }
+
+/** Breakdown risk-color palette (scheme/host/port rows). */
+private val DangerRed = Color(0xFFDC2626)
+private val WarnAmber = Color(0xFFD97706)
+private val PositiveGreen = Color(0xFF16A34A)
 
 /**
  * "Clean this link": every removal with its category color, per-removal
@@ -935,11 +1172,60 @@ private val TRACKING_PARAM_NAMES_LOWER = setOf(
     "referrer", "source", "yclid", "_hsenc", "_hsmi", "vero_id", "wickedid",
 )
 
+/** Shared toggle row: switch + two-line text INLINE (switch vertically
+ *  centered beside the text), whole row tappable, identical control width
+ *  on every row so the set stays aligned. */
+@Composable
+private fun LabeledToggleRow(
+    label: String,
+    supporting: String,
+    checked: Boolean,
+    onCheckedChange: () -> Unit,
+    enabled: Boolean = true,
+    sectionBounds: MutableMap<DemoTour.Target, Rect>? = null,
+    tourTarget: DemoTour.Target? = null,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .onGloballyPositioned { bounds ->
+                tourTarget?.let { sectionBounds?.set(it, bounds.boundsInRoot()) }
+            }
+            .toggleable(
+                value = checked,
+                enabled = enabled,
+                role = Role.Switch,
+                onValueChange = { onCheckedChange() },
+            ),
+    ) {
+        Switch(
+            checked = checked,
+            enabled = enabled,
+            onCheckedChange = null, // whole row toggles; keep single semantics
+        )
+        Spacer(Modifier.width(8.dp))
+        Column {
+            Text(label, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+            Text(
+                supporting,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
 /** Built-in tracker names — "Always remove" only offered for unknowns. */
 private val ALL_KNOWN_TRACKERS = TRACKING_PARAM_NAMES_LOWER + setOf("utm_source", "utm_medium")
 
 @Composable
-private fun BreakdownRow(label: String, value: String, category: CleanupCategory? = null) {
+private fun BreakdownRow(
+    label: String,
+    value: String,
+    category: CleanupCategory? = null,
+    color: Color? = null,
+) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (category != null) {
@@ -960,7 +1246,8 @@ private fun BreakdownRow(label: String, value: String, category: CleanupCategory
             value,
             style = MaterialTheme.typography.bodySmall,
             fontFamily = FontFamily.Monospace,
-            color = if (category != null) category.color() else MaterialTheme.colorScheme.onSurface,
+            color = color
+                ?: if (category != null) category.color() else MaterialTheme.colorScheme.onSurface,
         )
     }
 }
@@ -1096,11 +1383,21 @@ private fun AppIcon(app: HandlerApp, size: androidx.compose.ui.unit.Dp = 34.dp) 
 }
 
 @Composable
-private fun InvalidContent(state: InspectUiState.Invalid, onReinspect: () -> Unit, modifier: Modifier = Modifier) {
+private fun InvalidContent(
+    state: InspectUiState.Invalid,
+    onReinspect: () -> Unit,
+    statusBarInset: androidx.compose.ui.unit.Dp = 0.dp,
+    modifier: Modifier = Modifier,
+) {
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .padding(20.dp),
+            .padding(
+                start = 20.dp,
+                top = statusBarInset + 20.dp,
+                end = 20.dp,
+                bottom = 20.dp,
+            ),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text("Not a valid URL", style = MaterialTheme.typography.titleLarge)
@@ -1115,6 +1412,128 @@ private fun InvalidContent(state: InspectUiState.Invalid, onReinspect: () -> Uni
         )
         androidx.compose.material3.Button(onClick = onReinspect) {
             Text("Try another link")
+        }
+    }
+}
+
+/**
+ * Guided-tour spotlight overlay: a dark scrim with a rounded cut-out hole
+ * around the highlighted section (live bounds from [sectionBounds]), and a
+ * tooltip anchored directly below/above the hole — never pinned to the top.
+ * WELCOME/FINISH steps dim the whole screen with a centered tooltip. The
+ * scrim is purely visual; the tour is sandboxed in the ViewModel, so the
+ * highlighted section stays interactive while it is up.
+ */
+@Composable
+private fun TourOverlay(
+    tour: InspectUiState.TourState,
+    sectionBounds: Map<DemoTour.Target, Rect>,
+    onAdvance: () -> Unit,
+    onSkip: () -> Unit,
+) {
+    val step = DemoTour.steps[tour.index]
+    val total = DemoTour.steps.size
+    val ringColor = MaterialTheme.colorScheme.primary
+    val scrimColor = Color(0xB3000000)
+    var overlayPos by remember { mutableStateOf(Offset.Zero) }
+    var hostHeight by remember { mutableStateOf(0) }
+    var tooltipHeight by remember { mutableStateOf(0) }
+
+    val anchored = step.target != DemoTour.Target.WELCOME && step.target != DemoTour.Target.FINISH
+    // Section anchors report bounds in root coordinates; translate them into
+    // this overlay's own space (the overlay fills the content area).
+    val hole = sectionBounds[step.target]?.translate(-overlayPos.x, -overlayPos.y)
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .onGloballyPositioned {
+                overlayPos = it.positionInRoot()
+                hostHeight = it.size.height
+            },
+    ) {
+        Canvas(modifier = Modifier.matchParentSize()) {
+            if (anchored && hole != null) {
+                val r = hole.inflate(24f) // breathing room around the section
+                val path = Path().apply {
+                    addRect(Rect(0f, 0f, size.width, size.height))
+                    addRoundRect(
+                        androidx.compose.ui.geometry.RoundRect(r, CornerRadius(40f, 40f)),
+                    )
+                    fillType = PathFillType.EvenOdd
+                }
+                drawPath(path, scrimColor)
+                drawRoundRect(
+                    color = ringColor,
+                    topLeft = Offset(r.left, r.top),
+                    size = Size(r.width, r.height),
+                    cornerRadius = CornerRadius(40f, 40f),
+                    style = Stroke(width = 6f),
+                )
+            } else {
+                drawRect(scrimColor)
+            }
+        }
+
+        // Tooltip placement: below the hole when it fits, otherwise above;
+        // centered for the unanchored welcome/finish steps.
+        val tooltipH = tooltipHeight.toFloat()
+        val y = if (!anchored || hole == null) {
+            (hostHeight - tooltipH) / 2f
+        } else {
+            val below = hole.bottom + 40f
+            if (below + tooltipH <= hostHeight - 40f) below else hole.top - tooltipH - 40f
+        }.coerceIn(24f, (hostHeight - tooltipH - 24f).coerceAtLeast(24f))
+
+        Surface(
+            color = MaterialTheme.colorScheme.inverseSurface,
+            shape = RoundedCornerShape(16.dp),
+            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            modifier = Modifier
+                .padding(horizontal = 20.dp)
+                .onSizeChanged { tooltipHeight = it.height }
+                .absoluteOffset { IntOffset(0, y.roundToInt()) },
+        ) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        step.title,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.inverseOnSurface,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(
+                        "${tour.index + 1}/$total",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.inversePrimary,
+                    )
+                }
+                Text(
+                    step.body,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.inverseOnSurface,
+                )
+                if (tour.notice != null) {
+                    Text(
+                        tour.notice,
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.inversePrimary,
+                    )
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Spacer(Modifier.weight(1f))
+                    TextButton(onClick = onSkip) {
+                        Text("Skip tour", color = MaterialTheme.colorScheme.inverseOnSurface)
+                    }
+                    Button(onClick = onAdvance) {
+                        Text(if (tour.index == total - 1) "Finish" else "Next")
+                    }
+                }
+                LinearProgressIndicator(
+                    progress = { (tour.index + 1f) / total },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
         }
     }
 }

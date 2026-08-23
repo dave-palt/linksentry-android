@@ -181,4 +181,6 @@ data class AppSettings(
     val retentionDays: Int? = 30,
     val theme: ThemeMode = ThemeMode.SYSTEM,
     val handlerLayout: HandlerLayout = HandlerLayout.LIST,
+    /** Exact URLs the user opted out of history recording for. */
+    val historyExclusions: Set<String> = emptySet(),
 )

@@ -2,6 +2,8 @@ package com.dav3.linksentry.ui.inspect
 
 import android.net.Uri
 import com.dav3.linksentry.domain.model.AppSettings
+import com.dav3.linksentry.domain.model.DemoLinks
+import com.dav3.linksentry.domain.model.DemoTour
 import com.dav3.linksentry.domain.model.HandlerApp
 import com.dav3.linksentry.domain.model.HistoryAction
 import com.dav3.linksentry.domain.model.LinkRecord
@@ -95,6 +97,8 @@ class InspectViewModelTest {
 
         override suspend fun deleteFound(query: String): Int = 0
 
+        override suspend fun deleteByUrl(url: String): Int = 0
+
         override suspend fun recordApp(url: String, pkg: String, activity: String?, label: String?) {}
     }
 
@@ -116,6 +120,18 @@ class InspectViewModelTest {
         override suspend fun removeCustomTrackingParam(name: String) {
             customTracking.remove(name.trim().lowercase())
             settings.value = settings.value.copy(customTrackingParams = customTracking.toSet())
+        }
+
+        private val exclusions = mutableSetOf<String>()
+
+        override suspend fun excludeUrlFromHistory(url: String) {
+            exclusions.add(url)
+            settings.value = settings.value.copy(historyExclusions = exclusions.toSet())
+        }
+
+        override suspend fun unexcludeUrlFromHistory(url: String) {
+            exclusions.remove(url)
+            settings.value = settings.value.copy(historyExclusions = exclusions.toSet())
         }
     }
 
@@ -163,6 +179,18 @@ class InspectViewModelTest {
         override fun isDefaultBrowser() = held
     }
 
+    private class FakeDemoRepo : com.dav3.linksentry.domain.repository.DemoRepository {
+        val seen = mutableSetOf<com.dav3.linksentry.domain.repository.DemoKey>()
+        override fun observe(key: com.dav3.linksentry.domain.repository.DemoKey) = kotlinx.coroutines.flow.MutableStateFlow(key in seen)
+        override suspend fun isSeen(key: com.dav3.linksentry.domain.repository.DemoKey) = key in seen
+        override suspend fun markSeen(key: com.dav3.linksentry.domain.repository.DemoKey) {
+            seen.add(key)
+        }
+        override suspend fun unmarkSeen(key: com.dav3.linksentry.domain.repository.DemoKey) {
+            seen.remove(key)
+        }
+    }
+
     private lateinit var resolver: FakeResolver
     private lateinit var actions: FakeLinkActions
     private lateinit var history: FakeHistory
@@ -179,7 +207,13 @@ class InspectViewModelTest {
         role = FakeRoleChecker()
         handlerPrefs = FakeHandlerPrefs()
         dangerOverrides = FakeDangerOverrides()
+        demoRepo = FakeDemoRepo()
+        // Old tests describe steady-state (post-tour) behavior.
+        demoRepo.seen.add(com.dav3.linksentry.domain.repository.DemoKey.TOUR)
     }
+
+    /** Fresh VM with an unseen tour flag: the guided tour auto-starts. */
+    private fun tourVm() = InspectViewModel(resolver, actions, history, settingsRepo, role, handlerPrefs, dangerOverrides, FakeDemoRepo())
 
     @After
     fun tearDown() {
@@ -189,7 +223,55 @@ class InspectViewModelTest {
     private lateinit var handlerPrefs: FakeHandlerPrefs
     private lateinit var dangerOverrides: FakeDangerOverrides
 
-    private fun vm() = InspectViewModel(resolver, actions, history, settingsRepo, role, handlerPrefs, dangerOverrides)
+    private lateinit var demoRepo: FakeDemoRepo
+
+    private fun vm() = InspectViewModel(resolver, actions, history, settingsRepo, role, handlerPrefs, dangerOverrides, demoRepo)
+
+    @Test
+    fun `demo links are never recorded to history`() = runTest(dispatcher) {
+        val vm = vm()
+        vm.submitText(DemoLinks.TRACKING)
+        dispatcher.scheduler.advanceUntilIdle()
+        assertTrue(history.records.none { it.first == DemoLinks.TRACKING })
+    }
+
+    @Test
+    fun `excluded url is not recorded and exclusion round trips`() = runTest(dispatcher) {
+        val vm = vm()
+        vm.submitText("https://example.com/private")
+        dispatcher.scheduler.advanceUntilIdle()
+        assertTrue(history.records.any { it.first == "https://example.com/private" })
+        // opt out
+        vm.toggleHistoryExcluded()
+        dispatcher.scheduler.advanceUntilIdle()
+        val excluded = settingsRepo.settings.value.historyExclusions
+        assertTrue("https://example.com/private" in excluded)
+        // resubmit: not recorded anymore
+        vm.submitText("https://example.com/private")
+        dispatcher.scheduler.advanceUntilIdle()
+        assertEquals(1, history.records.count { it.first == "https://example.com/private" })
+    }
+
+    @Test
+    fun `toggle enforce https upgrades the url handlers open`() = runTest(dispatcher) {
+        val vm = vm()
+        vm.submitText("http://example.com:80/a?utm_source=x")
+        dispatcher.scheduler.advanceUntilIdle()
+        vm.toggleEnforceHttps()
+        vm.openWith(chrome)
+        dispatcher.scheduler.advanceUntilIdle()
+        assertEquals("https://example.com/a", actions.opened.last().second)
+    }
+
+    @Test
+    fun `opening a link writes history unless demo or excluded`() = runTest(dispatcher) {
+        val vm = vm()
+        vm.submitText("https://normal.com/a")
+        dispatcher.scheduler.advanceUntilIdle()
+        vm.openWith(chrome)
+        dispatcher.scheduler.advanceUntilIdle()
+        assertTrue(history.records.any { it.third == HistoryAction.OPENED_WITH && it.first == "https://normal.com/a" })
+    }
 
     @Test
     fun initial_state_is_Manual() = runTest(dispatcher) {
@@ -587,5 +669,90 @@ class InspectViewModelTest {
         dispatcher.scheduler.advanceUntilIdle()
         val state = vm.uiState.value as InspectUiState.Inspect
         assertEquals("evil.com", state.facts.host)
+    }
+
+    // ---------- guided tour (Immich-style demo) ----------
+
+    @Test
+    fun `tour auto-starts on first open`() = runTest(dispatcher) {
+        val vm = tourVm() // FakeDemoRepo starts unseen
+        dispatcher.scheduler.advanceUntilIdle()
+        val state = vm.uiState.value
+        assertTrue(state is InspectUiState.Inspect)
+        state as InspectUiState.Inspect
+        assertNotNull(state.tour)
+        assertEquals(0, state.tour?.index)
+        // Tour state uses fake handlers, never the resolver's.
+        assertEquals(DemoTour.fakeHandlers, state.handlers)
+    }
+
+    @Test
+    fun `tour does not auto-start when already seen`() = runTest(dispatcher) {
+        val vm = vm() // setUp marks TOUR seen
+        dispatcher.scheduler.advanceUntilIdle()
+        assertTrue(vm.uiState.value is InspectUiState.Manual)
+    }
+
+    @Test
+    fun `tour steps advance and end back at Manual with flag seen`() = runTest(dispatcher) {
+        val vm = tourVm()
+        dispatcher.scheduler.advanceUntilIdle()
+        repeat(DemoTour.steps.size - 1) {
+            vm.advanceTour()
+            dispatcher.scheduler.advanceUntilIdle()
+        }
+        assertTrue(vm.uiState.value is InspectUiState.Inspect)
+        vm.advanceTour() // past the last step -> end
+        dispatcher.scheduler.advanceUntilIdle()
+        assertTrue(vm.uiState.value is InspectUiState.Manual)
+        assertTrue(demoRepo.seen.contains(com.dav3.linksentry.domain.repository.DemoKey.TOUR))
+    }
+
+    @Test
+    fun `tour danger step gates the fake app list`() = runTest(dispatcher) {
+        val vm = tourVm()
+        dispatcher.scheduler.advanceUntilIdle()
+        repeat(7) {
+            // step index 7 = first danger step
+            vm.advanceTour()
+            dispatcher.scheduler.advanceUntilIdle()
+        }
+        val state = vm.uiState.value as InspectUiState.Inspect
+        assertEquals(DemoTour.URL_DANGER, state.url)
+        assertTrue(state.dangerGate)
+    }
+
+    @Test
+    fun `tour sandbox - tapping fake handler does not launch or record`() = runTest(dispatcher) {
+        val vm = tourVm()
+        dispatcher.scheduler.advanceUntilIdle()
+        val brave = DemoTour.fakeHandlers.first { it.label == "Brave" }
+        vm.openWith(brave)
+        dispatcher.scheduler.advanceUntilIdle()
+        assertTrue(actions.opened.isEmpty())
+        assertTrue(history.records.isEmpty())
+        val state = vm.uiState.value as InspectUiState.Inspect
+        assertEquals("Demo: would open in Brave (browser)", state.tour?.notice)
+    }
+
+    @Test
+    fun `tour sandbox - copy does not touch clipboard or record`() = runTest(dispatcher) {
+        val vm = tourVm()
+        dispatcher.scheduler.advanceUntilIdle()
+        vm.copyUrl()
+        dispatcher.scheduler.advanceUntilIdle()
+        assertTrue(actions.copied.isEmpty())
+        assertTrue(history.records.isEmpty())
+    }
+
+    @Test
+    fun `tour navigation never records history`() = runTest(dispatcher) {
+        val vm = tourVm()
+        dispatcher.scheduler.advanceUntilIdle()
+        repeat(DemoTour.steps.size) {
+            vm.advanceTour()
+            dispatcher.scheduler.advanceUntilIdle()
+        }
+        assertTrue(history.records.isEmpty())
     }
 }
