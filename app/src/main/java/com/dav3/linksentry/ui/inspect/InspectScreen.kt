@@ -52,10 +52,13 @@ fun InspectScreen(
         }
     }
 
-    // Re-check the default-browser role on every resume so the Manual-mode
-    // banner reflects reality after the user returns from system Settings.
+    // Re-check the default-browser role AND re-resolve the handler list on
+    // every resume: apps get installed/updated and link-handling defaults
+    // get flipped while LinkSentry is in the background — the "Open with"
+    // list must reflect the device's current state, not submit-time.
     LifecycleResumeEffect(Unit) {
         viewModel.refreshRole()
+        viewModel.refreshHandlers()
         onPauseOrDispose { }
     }
 
@@ -99,6 +102,9 @@ fun InspectScreen(
             onSkipTour = viewModel::skipTour,
             onToggleEnforceHttps = viewModel::toggleEnforceHttps,
             onToggleHistoryExcluded = viewModel::toggleHistoryExcluded,
+            onOpenAppSearch = viewModel::openAppSearch,
+            onCloseAppSearch = viewModel::closeAppSearch,
+            onAppSearchChange = viewModel::onAppSearchChange,
             modifier = Modifier.padding(padding),
         )
     }

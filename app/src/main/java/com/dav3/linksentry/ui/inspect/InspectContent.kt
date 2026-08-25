@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.OpenInNew
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Warning
@@ -125,6 +126,9 @@ fun InspectContent(
     onSkipTour: () -> Unit = {},
     onToggleEnforceHttps: () -> Unit = {},
     onToggleHistoryExcluded: () -> Unit = {},
+    onOpenAppSearch: () -> Unit = {},
+    onCloseAppSearch: () -> Unit = {},
+    onAppSearchChange: (String) -> Unit = {},
     statusBarInset: androidx.compose.ui.unit.Dp = 0.dp,
     modifier: Modifier = Modifier,
 ) {
@@ -160,6 +164,9 @@ fun InspectContent(
             onSkipTour,
             onToggleEnforceHttps,
             onToggleHistoryExcluded,
+            onOpenAppSearch,
+            onCloseAppSearch,
+            onAppSearchChange,
             modifier,
         )
         is InspectUiState.Invalid -> InvalidContent(state, onReinspect, resolvedInset, modifier)
@@ -268,6 +275,9 @@ private fun InspectedContent(
     onSkipTour: () -> Unit = {},
     onToggleEnforceHttps: () -> Unit = {},
     onToggleHistoryExcluded: () -> Unit = {},
+    onOpenAppSearch: () -> Unit = {},
+    onCloseAppSearch: () -> Unit = {},
+    onAppSearchChange: (String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val tour = state.tour
@@ -409,6 +419,16 @@ private fun InspectedContent(
                             HandlerGrid(state.handlers, onOpenApp)
                         } else {
                             state.handlers.forEach { app -> HandlerRow(app, onClick = { onOpenApp(app) }) }
+                        }
+                        // Tour sandbox: the fallback is hidden during the tour.
+                        if (tour == null) {
+                            AppSearchSection(
+                                state = state,
+                                onOpenApp = onOpenApp,
+                                onOpenAppSearch = onOpenAppSearch,
+                                onCloseAppSearch = onCloseAppSearch,
+                                onAppSearchChange = onAppSearchChange,
+                            )
                         }
                     }
                 }
@@ -1330,6 +1350,61 @@ private fun HandlerGrid(apps: List<HandlerApp>, onOpenApp: (HandlerApp) -> Unit)
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+/**
+ * "Search all apps" fallback below the handler list: some apps can open a
+ * link without declaring it in their manifest (or only match narrower
+ * paths), so they never appear above. This lists every launchable app for
+ * a manual, explicit launch.
+ */
+@Composable
+private fun AppSearchSection(
+    state: InspectUiState.Inspect,
+    onOpenApp: (HandlerApp) -> Unit,
+    onOpenAppSearch: () -> Unit,
+    onCloseAppSearch: () -> Unit,
+    onAppSearchChange: (String) -> Unit,
+) {
+    if (state.allApps.isEmpty()) {
+        TextButton(onClick = onOpenAppSearch) {
+            Icon(Icons.Filled.Search, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("Can't see an app? Search all apps")
+        }
+        return
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedTextField(
+            value = state.appSearch,
+            onValueChange = onAppSearchChange,
+            placeholder = { Text("Filter by app or package name") },
+            singleLine = true,
+            trailingIcon = {
+                TextButton(onClick = onCloseAppSearch) { Text("Close") }
+            },
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Text(
+            "Apps listed here did not declare support for this link — they may open their main screen and ignore it.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        when {
+            state.appSearch.isBlank() -> Text(
+                "Type to search ${state.allApps.size} installed apps.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            state.appSearchResults.isEmpty() -> Text(
+                "No apps match \"${state.appSearch}\".",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            else -> state.appSearchResults.forEach { app ->
+                HandlerRow(app, onClick = { onOpenApp(app) })
             }
         }
     }

@@ -52,13 +52,21 @@ class InspectViewModelTest {
         label = "YouTube",
         isBrowser = false,
     )
+    private val morphe = HandlerApp(
+        packageName = "app.morphe.manager",
+        activityName = "app.morphe.manager.MainActivity",
+        label = "Morphe",
+        isBrowser = false,
+    )
 
     private class FakeResolver(var apps: List<HandlerApp> = emptyList()) : HandlerResolver {
         var lastUri: Uri? = null
+        var allAppsResult: List<HandlerApp> = emptyList()
         override suspend fun resolve(uri: Uri): List<HandlerApp> {
             lastUri = uri
             return apps
         }
+        override suspend fun allLaunchableApps(): List<HandlerApp> = allAppsResult
     }
 
     private class FakeLinkActions : LinkActions {
@@ -398,6 +406,107 @@ class InspectViewModelTest {
         // After clearing, ranking falls back to browsers-first alpha.
         val first = (vm.uiState.value as InspectUiState.Inspect).handlers.first { !it.packageName.startsWith("@") }
         assertEquals("com.android.chrome", first.packageName)
+    }
+
+    @Test
+    fun refreshHandlers_reresolves_the_handler_list() = runTest(dispatcher) {
+        val vm = vm()
+        vm.submitText("https://example.com/a")
+        dispatcher.scheduler.advanceUntilIdle()
+        assertEquals(2, (vm.uiState.value as InspectUiState.Inspect).handlers.count { !it.packageName.startsWith("@") })
+        // An app gets installed (or its link handling enabled) while we are
+        // in the background — resume must pick it up.
+        resolver.apps = listOf(chrome, youtube, morphe)
+        vm.refreshHandlers()
+        dispatcher.scheduler.advanceUntilIdle()
+        val state = vm.uiState.value as InspectUiState.Inspect
+        assertEquals(3, state.handlers.count { !it.packageName.startsWith("@") })
+        assertEquals("app.morphe.manager", state.handlers.first { it.packageName == "app.morphe.manager" }.packageName)
+    }
+
+    @Test
+    fun refreshHandlers_skips_tour_and_manual_states() = runTest(dispatcher) {
+        // Manual state: refresh does nothing (stays Manual).
+        val vm = vm()
+        vm.refreshHandlers()
+        dispatcher.scheduler.advanceUntilIdle()
+        assertTrue(vm.uiState.value is InspectUiState.Manual)
+        // Tour state (auto-started by the unseen tour flag): fake handlers
+        // stay untouched — the tour is sandboxed.
+        val touring = tourVm()
+        dispatcher.scheduler.advanceUntilIdle()
+        touring.refreshHandlers()
+        dispatcher.scheduler.advanceUntilIdle()
+        val st = touring.uiState.value as InspectUiState.Inspect
+        assertNotNull(st.tour)
+        assertTrue(st.handlers.all { it in DemoTour.fakeHandlers })
+    }
+
+    @Test
+    fun app_search_fallback_filters_and_launches() = runTest(dispatcher) {
+        resolver.apps = listOf(chrome) // only browsers declared for this URL
+        resolver.allAppsResult = listOf(chrome, morphe, youtube)
+        val vm = vm()
+        vm.submitText("https://morphe.software/add-source/x")
+        dispatcher.scheduler.advanceUntilIdle()
+        // Collapsed by default: the entry point is visible, no list loaded.
+        var st = vm.uiState.value as InspectUiState.Inspect
+        assertTrue(st.allApps.isEmpty())
+        vm.openAppSearch()
+        dispatcher.scheduler.advanceUntilIdle()
+        st = vm.uiState.value as InspectUiState.Inspect
+        assertEquals(3, st.allApps.size)
+        // Blank query → no results yet (hint shows instead).
+        assertTrue(st.appSearchResults.isEmpty())
+        // Filtering matches label and package, case-insensitively.
+        vm.onAppSearchChange("morphe")
+        st = vm.uiState.value as InspectUiState.Inspect
+        assertEquals(listOf("app.morphe.manager"), st.appSearchResults.map { it.packageName })
+        vm.onAppSearchChange("Morphe")
+        st = vm.uiState.value as InspectUiState.Inspect
+        assertEquals(listOf("app.morphe.manager"), st.appSearchResults.map { it.packageName })
+        // Apps already listed as handlers never duplicate into the fallback.
+        vm.onAppSearchChange("chrome")
+        st = vm.uiState.value as InspectUiState.Inspect
+        assertTrue(st.appSearchResults.none { it.packageName == "com.android.chrome" })
+        // Launching a fallback pick goes through the same explicit path.
+        vm.onAppSearchChange("morphe")
+        st = vm.uiState.value as InspectUiState.Inspect
+        vm.openWith(st.appSearchResults.first())
+        dispatcher.scheduler.advanceUntilIdle()
+        assertEquals("app.morphe.manager", actions.opened.last().first.packageName)
+        assertEquals(1, history.records.count { it.third == HistoryAction.OPENED_WITH })
+    }
+
+    @Test
+    fun app_search_close_clears_and_reopen_reloads_fresh() = runTest(dispatcher) {
+        resolver.allAppsResult = listOf(morphe)
+        val vm = vm()
+        vm.submitText("https://a.com/p")
+        dispatcher.scheduler.advanceUntilIdle()
+        vm.openAppSearch()
+        dispatcher.scheduler.advanceUntilIdle()
+        assertEquals(1, (vm.uiState.value as InspectUiState.Inspect).allApps.size)
+        vm.closeAppSearch()
+        var st = vm.uiState.value as InspectUiState.Inspect
+        assertTrue(st.allApps.isEmpty() && st.appSearch.isEmpty())
+        // Reopen loads FRESH: an app installed in between shows up.
+        resolver.allAppsResult = listOf(morphe, youtube)
+        vm.openAppSearch()
+        dispatcher.scheduler.advanceUntilIdle()
+        st = vm.uiState.value as InspectUiState.Inspect
+        assertEquals(2, st.allApps.size)
+    }
+
+    @Test
+    fun app_search_is_sandboxed_during_tour() = runTest(dispatcher) {
+        val touring = tourVm() // unseen flag → tour auto-starts
+        dispatcher.scheduler.advanceUntilIdle()
+        touring.openAppSearch()
+        dispatcher.scheduler.advanceUntilIdle()
+        val st = touring.uiState.value as InspectUiState.Inspect
+        assertNotNull(st.tour)
+        assertTrue(st.allApps.isEmpty())
     }
 
     @Test

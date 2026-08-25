@@ -26,6 +26,12 @@ leaking a URL, or phoning home. This is enforced in CI.
   `file:`), and more. Absence of signals is never presented as "safe".
 - **Open-with chooser** — the real list of installed apps that can handle the
   link, browsers flagged; launches use explicit intents only.
+- **Search all apps** — when an app doesn't declare support for a link (or
+  only matches narrower paths), search every launchable app by name or
+  package and open it explicitly anyway.
+- **Live handler list** — the "Open with" list is re-resolved every time the
+  screen resumes, so newly installed apps or changed link-handling defaults
+  appear without re-submitting the link.
 - **Copy / Copy cleaned / Share** — cleaned strips credentials + tracking
   parameters.
 - **Manual inspect** — paste or type any URL.
