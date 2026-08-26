@@ -102,8 +102,6 @@ fun InspectScreen(
             onSkipTour = viewModel::skipTour,
             onToggleEnforceHttps = viewModel::toggleEnforceHttps,
             onToggleHistoryExcluded = viewModel::toggleHistoryExcluded,
-            onOpenAppSearch = viewModel::openAppSearch,
-            onCloseAppSearch = viewModel::closeAppSearch,
             onAppSearchChange = viewModel::onAppSearchChange,
             modifier = Modifier.padding(padding),
         )

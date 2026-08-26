@@ -449,21 +449,19 @@ class InspectViewModelTest {
         val vm = vm()
         vm.submitText("https://morphe.software/add-source/x")
         dispatcher.scheduler.advanceUntilIdle()
-        // Collapsed by default: the entry point is visible, no list loaded.
+        // allApps loads eagerly with the handler list (always-visible field).
         var st = vm.uiState.value as InspectUiState.Inspect
-        assertTrue(st.allApps.isEmpty())
-        vm.openAppSearch()
-        dispatcher.scheduler.advanceUntilIdle()
-        st = vm.uiState.value as InspectUiState.Inspect
         assertEquals(3, st.allApps.size)
-        // Blank query → no results yet (hint shows instead).
-        assertTrue(st.appSearchResults.isEmpty())
+        // Blank query → default ranked list, untouched.
+        assertEquals(0, st.appSearchResults.size)
+        assertTrue(st.handlers.any { it.packageName == "com.android.chrome" })
+        // Whitespace-only input still counts as blank (trim semantics).
+        vm.onAppSearchChange("   ")
+        st = vm.uiState.value as InspectUiState.Inspect
+        assertEquals(0, st.appSearchResults.size)
         // Filtering matches label and package, case-insensitively; the
         // search covers the SAME list — current handlers included.
-        vm.onAppSearchChange("morphe")
-        st = vm.uiState.value as InspectUiState.Inspect
-        assertEquals(listOf("app.morphe.manager"), st.appSearchResults.map { it.packageName })
-        vm.onAppSearchChange("Morphe")
+        vm.onAppSearchChange(" morphe ")
         st = vm.uiState.value as InspectUiState.Inspect
         assertEquals(listOf("app.morphe.manager"), st.appSearchResults.map { it.packageName })
         // A handler already listed still shows up in search results
@@ -474,6 +472,11 @@ class InspectViewModelTest {
         vm.onAppSearchChange("copy")
         st = vm.uiState.value as InspectUiState.Inspect
         assertTrue(st.appSearchResults.none { it.packageName.startsWith("@") })
+        // Clearing the field restores the default list state.
+        vm.onAppSearchChange("")
+        st = vm.uiState.value as InspectUiState.Inspect
+        assertEquals(0, st.appSearchResults.size)
+        assertTrue(st.handlers.any { it.packageName == "com.android.chrome" })
         // Launching a search pick goes through the same explicit path.
         vm.onAppSearchChange("morphe")
         st = vm.uiState.value as InspectUiState.Inspect
@@ -489,17 +492,13 @@ class InspectViewModelTest {
         val vm = vm()
         vm.submitText("https://a.com/p")
         dispatcher.scheduler.advanceUntilIdle()
-        vm.openAppSearch()
-        dispatcher.scheduler.advanceUntilIdle()
         assertEquals(1, (vm.uiState.value as InspectUiState.Inspect).allApps.size)
-        vm.closeAppSearch()
-        var st = vm.uiState.value as InspectUiState.Inspect
-        assertTrue(st.allApps.isEmpty() && st.appSearch.isEmpty())
-        // Reopen loads FRESH: an app installed in between shows up.
+        // A backgrounded-then-resumed screen reloads ALL lists FRESH: an
+        // app installed in between shows up.
         resolver.allAppsResult = listOf(morphe, youtube)
-        vm.openAppSearch()
+        vm.refreshHandlers()
         dispatcher.scheduler.advanceUntilIdle()
-        st = vm.uiState.value as InspectUiState.Inspect
+        val st = vm.uiState.value as InspectUiState.Inspect
         assertEquals(2, st.allApps.size)
     }
 
@@ -507,10 +506,10 @@ class InspectViewModelTest {
     fun app_search_is_sandboxed_during_tour() = runTest(dispatcher) {
         val touring = tourVm() // unseen flag → tour auto-starts
         dispatcher.scheduler.advanceUntilIdle()
-        touring.openAppSearch()
-        dispatcher.scheduler.advanceUntilIdle()
         val st = touring.uiState.value as InspectUiState.Inspect
         assertNotNull(st.tour)
+        // Tour states are built by applyTourStep, which never loads real
+        // app data — the search field stays empty in the sandbox.
         assertTrue(st.allApps.isEmpty())
     }
 

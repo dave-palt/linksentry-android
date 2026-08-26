@@ -233,6 +233,14 @@ class InspectViewModel @Inject constructor(
             val overrideActive = hostOverride || signalsOverride
             val settingsNow = settingsRepo.settings.first()
             val custom = settingsNow.customTrackingParams
+            // The search field is always visible now — load every
+            // launchable app alongside the handler resolution so filtering
+            // is instant when the user types.
+            val allApps = if (DemoLinks.isDemo(analysis.facts.raw)) {
+                emptyList() // tour/demo sandbox: no real app data
+            } else {
+                resolver.allLaunchableApps()
+            }
             val newState = InspectUiState.Inspect(
                 url = analysis.facts.raw,
                 facts = analysis.facts,
@@ -245,6 +253,7 @@ class InspectViewModel @Inject constructor(
                 dangerGate = analysis.verdict.worst == Severity.DANGER && !overrideActive,
                 overrideActive = overrideActive,
                 historyExcluded = analysis.facts.raw in settingsNow.historyExclusions,
+                allApps = allApps,
             )
             _uiState.value = newState
             // Sandbox: regular inspections are recorded; tour navigation is
@@ -495,12 +504,14 @@ class InspectViewModel @Inject constructor(
         if (state.tour != null) return // tour is sandboxed; never resandbox data
         viewModelScope.launch {
             val ranked = rankHandlers(state)
+            val apps = resolver.allLaunchableApps()
             val current = _uiState.value
             if (current is InspectUiState.Inspect && current.url == state.url) {
                 _uiState.value = current.copy(
                     handlers = ranked,
+                    allApps = apps,
                     // Keep active search results consistent with the new list.
-                    appSearchResults = filterAppsForSearch(ranked, current.allApps, current.appSearch),
+                    appSearchResults = filterAppsForSearch(ranked, apps, current.appSearch),
                 )
             }
         }
@@ -692,36 +703,10 @@ class InspectViewModel @Inject constructor(
     }
 
     /**
-     * "Search all apps" fallback: loads every launchable app so the user
-     * can force-open one that never appears above because its intent
-     * filters don't declare support for this URL. Always loads fresh —
-     * apps installed since the last expansion show up too.
+     * Tracks the search text and recomputes the results. Filtering starts
+     * at the first non-space character (whitespace-only input keeps the
+     * default ranked list).
      */
-    fun openAppSearch() {
-        val state = _uiState.value
-        if (state !is InspectUiState.Inspect) return
-        if (state.tour != null) return // tour is sandboxed
-        viewModelScope.launch {
-            val apps = resolver.allLaunchableApps()
-            val current = _uiState.value
-            if (current is InspectUiState.Inspect) {
-                _uiState.value = current.copy(
-                    allApps = apps,
-                    appSearch = "",
-                    appSearchResults = filterAppsForSearch(current.handlers, apps, ""),
-                )
-            }
-        }
-    }
-
-    /** Collapses the fallback (list reloads next time it's opened). */
-    fun closeAppSearch() {
-        val state = _uiState.value
-        if (state !is InspectUiState.Inspect) return
-        _uiState.value = state.copy(allApps = emptyList(), appSearch = "", appSearchResults = emptyList())
-    }
-
-    /** Tracks the fallback filter text and recomputes the results. */
     fun onAppSearchChange(query: String) {
         val state = _uiState.value
         if (state !is InspectUiState.Inspect) return
@@ -736,15 +721,15 @@ class InspectViewModel @Inject constructor(
  * Search filter for the merged app list: current handlers (ranked order
  * preserved, pseudo entries excluded) followed by every other launchable
  * app, filtered case-insensitively on label or package name. A blank
- * query yields nothing (the hint shows instead).
+ * (whitespace-only) query yields nothing — the default list shows.
  */
 private fun filterAppsForSearch(
     handlers: List<HandlerApp>,
     allApps: List<HandlerApp>,
     query: String,
 ): List<HandlerApp> {
-    if (query.isBlank()) return emptyList()
     val q = query.trim()
+    if (q.isEmpty()) return emptyList()
     fun matches(app: HandlerApp) = app.label.contains(q, ignoreCase = true) || app.packageName.contains(q, ignoreCase = true)
     val seen = mutableSetOf<String>()
     return (handlers.filterNot { it.packageName.startsWith("@") } + allApps)

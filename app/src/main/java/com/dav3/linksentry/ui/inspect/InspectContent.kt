@@ -29,7 +29,6 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.OpenInNew
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Warning
@@ -126,8 +125,6 @@ fun InspectContent(
     onSkipTour: () -> Unit = {},
     onToggleEnforceHttps: () -> Unit = {},
     onToggleHistoryExcluded: () -> Unit = {},
-    onOpenAppSearch: () -> Unit = {},
-    onCloseAppSearch: () -> Unit = {},
     onAppSearchChange: (String) -> Unit = {},
     statusBarInset: androidx.compose.ui.unit.Dp = 0.dp,
     modifier: Modifier = Modifier,
@@ -164,8 +161,6 @@ fun InspectContent(
             onSkipTour,
             onToggleEnforceHttps,
             onToggleHistoryExcluded,
-            onOpenAppSearch,
-            onCloseAppSearch,
             onAppSearchChange,
             modifier,
         )
@@ -275,8 +270,6 @@ private fun InspectedContent(
     onSkipTour: () -> Unit = {},
     onToggleEnforceHttps: () -> Unit = {},
     onToggleHistoryExcluded: () -> Unit = {},
-    onOpenAppSearch: () -> Unit = {},
-    onCloseAppSearch: () -> Unit = {},
     onAppSearchChange: (String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
@@ -417,36 +410,39 @@ private fun InspectedContent(
                                 style = MaterialTheme.typography.titleMedium,
                                 modifier = Modifier.weight(1f),
                             )
-                            if (tour == null && state.allApps.isEmpty()) {
-                                TextButton(onClick = onResetSorting) {
+                            // DANGER-red on purpose: this wipes the user's
+                            // learned per-domain ordering.
+                            if (tour == null && state.appSearch.isBlank()) {
+                                TextButton(
+                                    onClick = onResetSorting,
+                                    colors = androidx.compose.material3.ButtonDefaults.textButtonColors(
+                                        contentColor = Color(0xFFDC2626),
+                                    ),
+                                ) {
                                     Text("Reset app order")
                                 }
                             }
                         }
-                        // Tour sandbox: the fallback is hidden during the tour.
-                        if (tour != null) {
+                        // Search field is always present (tour sandbox
+                        // excepted): placeholder until the first non-space
+                        // character, then the list below starts filtering.
+                        if (tour == null) {
+                            OutlinedTextField(
+                                value = state.appSearch,
+                                onValueChange = onAppSearchChange,
+                                placeholder = { Text("Can't see an app? Search all apps") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                        val searching = state.appSearch.isNotBlank()
+                        if (!searching) {
+                            // Default: the ranked handler list (untouched).
                             if (state.handlers.isEmpty()) {
                                 Text(
                                     "No installed app can open this link.",
                                     style = MaterialTheme.typography.bodyMedium,
                                 )
-                            }
-                            if (handlerLayout == com.dav3.linksentry.domain.model.HandlerLayout.GRID) {
-                                HandlerGrid(state.handlers, onOpenApp)
-                            } else {
-                                state.handlers.forEach { app -> HandlerRow(app, onClick = { onOpenApp(app) }) }
-                            }
-                        } else if (state.allApps.isEmpty()) {
-                            if (state.handlers.isEmpty()) {
-                                Text(
-                                    "No installed app can open this link.",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                )
-                            }
-                            TextButton(onClick = onOpenAppSearch) {
-                                Icon(Icons.Filled.Search, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Spacer(Modifier.width(6.dp))
-                                Text("Can't see an app? Search all apps")
                             }
                             if (handlerLayout == com.dav3.linksentry.domain.model.HandlerLayout.GRID) {
                                 HandlerGrid(state.handlers, onOpenApp)
@@ -456,22 +452,7 @@ private fun InspectedContent(
                         } else {
                             // Search mode: the SAME list, filtered across every
                             // launchable app (handlers included).
-                            OutlinedTextField(
-                                value = state.appSearch,
-                                onValueChange = onAppSearchChange,
-                                placeholder = { Text("Filter by app or package name") },
-                                singleLine = true,
-                                trailingIcon = {
-                                    TextButton(onClick = onCloseAppSearch) { Text("Close") }
-                                },
-                                modifier = Modifier.fillMaxWidth(),
-                            )
                             when {
-                                state.appSearch.isBlank() -> Text(
-                                    "Type to search ${state.allApps.size} installed apps.",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
                                 state.appSearchResults.isEmpty() -> Text(
                                     "No apps match \"${state.appSearch}\".",
                                     style = MaterialTheme.typography.bodySmall,
