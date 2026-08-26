@@ -23,6 +23,7 @@ import com.dav3.linksentry.domain.repository.SettingsRepository
 import com.dav3.linksentry.domain.system.BrowserRoleChecker
 import com.dav3.linksentry.domain.system.HandlerRanker
 import com.dav3.linksentry.domain.system.HandlerResolver
+import com.dav3.linksentry.domain.system.HandlerUsage
 import com.dav3.linksentry.domain.system.LinkActions
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -79,6 +80,13 @@ sealed interface InspectUiState {
         val enforceHttps: Boolean = false,
         /** True when this exact URL is opted out of history recording. */
         val historyExcluded: Boolean = false,
+        /** Launchable apps for the "search all apps" fallback (loaded on
+         *  demand — empty until the user expands it). */
+        val allApps: List<HandlerApp> = emptyList(),
+        /** Current filter text for the fallback list. */
+        val appSearch: String = "",
+        /** Filtered fallback results (apps not already listed above). */
+        val appSearchResults: List<HandlerApp> = emptyList(),
     ) : InspectUiState
 
     /** Guided-tour progress; [index] is into [DemoTour.steps]. */
@@ -209,21 +217,7 @@ class InspectViewModel @Inject constructor(
             )
             // Copy actions ride along as pseudo entries, usage-ranked per
             // domain like real apps so frequent copiers get them on top.
-            val pseudoPkg = usage
-                .filter { it.key == HandlerRanker.pseudoKey(analysis.facts.host) }
-                .maxByOrNull { it.lastUsed }?.packageName
-            val copyEntries = listOf(
-                HandlerApp(PseudoHandler.COPY, "", "Copy link", isBrowser = false, icon = null),
-                HandlerApp(PseudoHandler.COPY_CLEANED, "", "Copy cleaned link", isBrowser = false, icon = null),
-                HandlerApp(PseudoHandler.SHARE, "", "Share link", isBrowser = false, icon = null),
-            )
-            val handlers = if (pseudoPkg != null && copyEntries.any { it.packageName == pseudoPkg }) {
-                listOf(copyEntries.first { it.packageName == pseudoPkg }) +
-                    ranked +
-                    copyEntries.filterNot { it.packageName == pseudoPkg }
-            } else {
-                ranked + copyEntries
-            }
+            val handlers = attachPseudoEntries(ranked, usage, analysis.facts.host)
             // Danger gate: only for DANGER-severity links without a stored
             // user green-light (per host, or for links with identical DANGER
             // signals — "same link types are not flagged anymore").
@@ -239,6 +233,14 @@ class InspectViewModel @Inject constructor(
             val overrideActive = hostOverride || signalsOverride
             val settingsNow = settingsRepo.settings.first()
             val custom = settingsNow.customTrackingParams
+            // The search field is always visible now — load every
+            // launchable app alongside the handler resolution so filtering
+            // is instant when the user types.
+            val allApps = if (DemoLinks.isDemo(analysis.facts.raw)) {
+                emptyList() // tour/demo sandbox: no real app data
+            } else {
+                resolver.allLaunchableApps()
+            }
             val newState = InspectUiState.Inspect(
                 url = analysis.facts.raw,
                 facts = analysis.facts,
@@ -251,6 +253,7 @@ class InspectViewModel @Inject constructor(
                 dangerGate = analysis.verdict.worst == Severity.DANGER && !overrideActive,
                 overrideActive = overrideActive,
                 historyExcluded = analysis.facts.raw in settingsNow.historyExclusions,
+                allApps = allApps,
             )
             _uiState.value = newState
             // Sandbox: regular inspections are recorded; tour navigation is
@@ -489,6 +492,67 @@ class InspectViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Re-resolve the handler list for the inspected URL (called on resume).
+     * The stored list is a point-in-time snapshot: apps get installed,
+     * updated, or have their link-handling defaults flipped while
+     * LinkSentry is in the background — this keeps "Open with" current.
+     */
+    fun refreshHandlers() {
+        val state = _uiState.value
+        if (state !is InspectUiState.Inspect) return
+        if (state.tour != null) return // tour is sandboxed; never resandbox data
+        viewModelScope.launch {
+            val ranked = rankHandlers(state)
+            val apps = resolver.allLaunchableApps()
+            val current = _uiState.value
+            if (current is InspectUiState.Inspect && current.url == state.url) {
+                _uiState.value = current.copy(
+                    handlers = ranked,
+                    allApps = apps,
+                    // Keep active search results consistent with the new list.
+                    appSearchResults = filterAppsForSearch(ranked, apps, current.appSearch),
+                )
+            }
+        }
+    }
+
+    /** Shared builder: resolve + rank + pseudo entries for [state]. */
+    private suspend fun rankHandlers(state: InspectUiState.Inspect): List<HandlerApp> = buildHandlers(state.url, state.facts.host, state.facts.scheme)
+
+    /** Shared builder: resolve + rank + pseudo entries for a raw URL. */
+    private suspend fun buildHandlers(url: String, host: String, scheme: String): List<HandlerApp> {
+        val resolved = resolver.resolve(Uri.parse(url))
+        val usage = handlerPrefs.observeAll().first()
+        val ranked = HandlerRanker.rank(
+            handlers = resolved,
+            usage = usage,
+            host = host,
+            scheme = scheme,
+        )
+        return attachPseudoEntries(ranked, usage, host)
+    }
+
+    /** Copy/share actions ride along as pseudo entries, usage-ranked per
+     *  domain like real apps so frequent copiers get them on top. */
+    private fun attachPseudoEntries(ranked: List<HandlerApp>, usage: List<HandlerUsage>, host: String): List<HandlerApp> {
+        val pseudoPkg = usage
+            .filter { it.key == HandlerRanker.pseudoKey(host) }
+            .maxByOrNull { it.lastUsed }?.packageName
+        val copyEntries = listOf(
+            HandlerApp(PseudoHandler.COPY, "", "Copy link", isBrowser = false, icon = null),
+            HandlerApp(PseudoHandler.COPY_CLEANED, "", "Copy cleaned link", isBrowser = false, icon = null),
+            HandlerApp(PseudoHandler.SHARE, "", "Share link", isBrowser = false, icon = null),
+        )
+        return if (pseudoPkg != null && copyEntries.any { it.packageName == pseudoPkg }) {
+            listOf(copyEntries.first { it.packageName == pseudoPkg }) +
+                ranked +
+                copyEntries.filterNot { it.packageName == pseudoPkg }
+        } else {
+            ranked + copyEntries
+        }
+    }
+
     /** Open the system Default apps settings screen. */
     fun openBrowserSettings() {
         actions.openDefaultAppsSettings()
@@ -625,11 +689,49 @@ class InspectViewModel @Inject constructor(
         viewModelScope.launch {
             handlerPrefs.clearKey(HandlerRanker.domainKey(state.facts.host))
             handlerPrefs.clearKey(HandlerRanker.pseudoKey(state.facts.host))
-            // Re-rank without the wiped rows.
-            val usage = handlerPrefs.observeAll().first()
-            _uiState.value = state.copy(
-                handlers = HandlerRanker.rank(resolver.resolve(Uri.parse(state.url)), usage, state.facts.host, state.facts.scheme),
-            )
+            // Re-rank without the wiped rows (pseudo entries re-attached).
+            val reranked = rankHandlers(state)
+            val current = _uiState.value
+            if (current is InspectUiState.Inspect && current.url == state.url) {
+                _uiState.value = current.copy(
+                    handlers = reranked,
+                    // Keep the search results consistent with the new list.
+                    appSearchResults = filterAppsForSearch(reranked, current.allApps, current.appSearch),
+                )
+            }
         }
     }
+
+    /**
+     * Tracks the search text and recomputes the results. Filtering starts
+     * at the first non-space character (whitespace-only input keeps the
+     * default ranked list).
+     */
+    fun onAppSearchChange(query: String) {
+        val state = _uiState.value
+        if (state !is InspectUiState.Inspect) return
+        _uiState.value = state.copy(
+            appSearch = query,
+            appSearchResults = filterAppsForSearch(state.handlers, state.allApps, query),
+        )
+    }
+}
+
+/**
+ * Search filter for the merged app list: current handlers (ranked order
+ * preserved, pseudo entries excluded) followed by every other launchable
+ * app, filtered case-insensitively on label or package name. A blank
+ * (whitespace-only) query yields nothing — the default list shows.
+ */
+private fun filterAppsForSearch(
+    handlers: List<HandlerApp>,
+    allApps: List<HandlerApp>,
+    query: String,
+): List<HandlerApp> {
+    val q = query.trim()
+    if (q.isEmpty()) return emptyList()
+    fun matches(app: HandlerApp) = app.label.contains(q, ignoreCase = true) || app.packageName.contains(q, ignoreCase = true)
+    val seen = mutableSetOf<String>()
+    return (handlers.filterNot { it.packageName.startsWith("@") } + allApps)
+        .filter { seen.add(it.packageName) && matches(it) }
 }

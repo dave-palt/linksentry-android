@@ -117,8 +117,8 @@ jobs:
 
       - name: Rename artifacts to app name
         run: |
-          mv app/build/outputs/apk/release/app-release.apk "LinkSentry-${{ steps.version.outputs.tag }}.apk"
-          mv app/build/outputs/bundle/release/app-release.aab "LinkSentry-${{ steps.version.outputs.tag }}.aab"
+          mv app/build/outputs/apk/release/app-release.apk "app/build/outputs/apk/release/LinkSentry-${{ steps.version.outputs.tag }}.apk"
+          mv app/build/outputs/bundle/release/app-release.aab "app/build/outputs/bundle/release/LinkSentry-${{ steps.version.outputs.tag }}.aab"
 
       - name: Upload AAB artifact
         uses: actions/upload-artifact@v7

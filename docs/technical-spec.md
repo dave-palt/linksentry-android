@@ -40,8 +40,9 @@ com.dav3.linksentry
 
 - **Zero `uses-permission`.** (Debug builds gain only the auto-injected
   `DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION` marker — inert.)
-- `<queries>`: two `<intent>` signatures (VIEW + BROWSABLE + scheme http /
-  https) for package visibility on API 30+.
+- `<queries>`: three `<intent>` signatures (VIEW + BROWSABLE + scheme http /
+  https for handler visibility, MAIN + LAUNCHER for the "search all apps"
+  fallback) for package visibility on API 30+.
 - MainActivity: `singleTop`, `exported`, MAIN/LAUNCHER filter + VIEW filter
   with DEFAULT + BROWSABLE + **both** http and https schemes (both required
   for browser-app candidacy in system settings).
@@ -68,7 +69,15 @@ clear, count.
 ## Platform mechanics
 
 - Handler enumeration: `queryIntentActivities(VIEW+BROWSABLE, MATCH_ALL)` →
-  drop self, distinctBy package, label via `loadLabel`.
+  drop self, distinctBy package, label via `loadLabel`. The list is
+  re-resolved on every screen resume (installs, updates, and link-handling
+  default changes while backgrounded are picked up).
+- Fallback enumeration: `queryIntentActivities(MAIN+LAUNCHER, MATCH_ALL)` →
+  enabled, self excluded, one row per app — the "search all apps" list.
+  Filter matches app label or package name, case-insensitive; apps already
+  in the handler list never duplicate. Launch still goes through the same
+  explicit-intent path (the target app may simply open its main screen
+  and ignore the URL if it has no matching intent filter).
 - Browser classification: second query against
   `https://linksentry-probe.invalid/` — only wildcard-host filters (true
   browsers) match.

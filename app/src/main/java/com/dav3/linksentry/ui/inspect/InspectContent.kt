@@ -125,6 +125,7 @@ fun InspectContent(
     onSkipTour: () -> Unit = {},
     onToggleEnforceHttps: () -> Unit = {},
     onToggleHistoryExcluded: () -> Unit = {},
+    onAppSearchChange: (String) -> Unit = {},
     statusBarInset: androidx.compose.ui.unit.Dp = 0.dp,
     modifier: Modifier = Modifier,
 ) {
@@ -160,6 +161,7 @@ fun InspectContent(
             onSkipTour,
             onToggleEnforceHttps,
             onToggleHistoryExcluded,
+            onAppSearchChange,
             modifier,
         )
         is InspectUiState.Invalid -> InvalidContent(state, onReinspect, resolvedInset, modifier)
@@ -268,6 +270,7 @@ private fun InspectedContent(
     onSkipTour: () -> Unit = {},
     onToggleEnforceHttps: () -> Unit = {},
     onToggleHistoryExcluded: () -> Unit = {},
+    onAppSearchChange: (String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val tour = state.tour
@@ -398,28 +401,67 @@ private fun InspectedContent(
                             .fillMaxWidth()
                             .onGloballyPositioned { sectionBounds[DemoTour.Target.APPS] = it.boundsInRoot() },
                     ) {
-                        Text("Open with", style = MaterialTheme.typography.titleMedium)
-                        if (state.handlers.isEmpty()) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
                             Text(
-                                "No installed app can open this link.",
-                                style = MaterialTheme.typography.bodyMedium,
+                                "Open with",
+                                style = MaterialTheme.typography.titleMedium,
+                                modifier = Modifier.weight(1f),
+                            )
+                            // DANGER-red on purpose: this wipes the user's
+                            // learned per-domain ordering.
+                            if (tour == null && state.appSearch.isBlank()) {
+                                TextButton(
+                                    onClick = onResetSorting,
+                                    colors = androidx.compose.material3.ButtonDefaults.textButtonColors(
+                                        contentColor = Color(0xFFDC2626),
+                                    ),
+                                ) {
+                                    Text("Reset app order")
+                                }
+                            }
+                        }
+                        // Search field is always present (tour sandbox
+                        // excepted): placeholder until the first non-space
+                        // character, then the list below starts filtering.
+                        if (tour == null) {
+                            OutlinedTextField(
+                                value = state.appSearch,
+                                onValueChange = onAppSearchChange,
+                                placeholder = { Text("Can't see an app? Search all apps") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
                             )
                         }
-                        if (handlerLayout == com.dav3.linksentry.domain.model.HandlerLayout.GRID) {
-                            HandlerGrid(state.handlers, onOpenApp)
+                        val searching = state.appSearch.isNotBlank()
+                        if (!searching) {
+                            // Default: the ranked handler list (untouched).
+                            if (state.handlers.isEmpty()) {
+                                Text(
+                                    "No installed app can open this link.",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                            }
+                            if (handlerLayout == com.dav3.linksentry.domain.model.HandlerLayout.GRID) {
+                                HandlerGrid(state.handlers, onOpenApp)
+                            } else {
+                                state.handlers.forEach { app -> HandlerRow(app, onClick = { onOpenApp(app) }) }
+                            }
                         } else {
-                            state.handlers.forEach { app -> HandlerRow(app, onClick = { onOpenApp(app) }) }
+                            // Search mode: the SAME list, filtered across every
+                            // launchable app (handlers included).
+                            when {
+                                state.appSearchResults.isEmpty() -> Text(
+                                    "No apps match \"${state.appSearch}\".",
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                                else -> state.appSearchResults.forEach { app ->
+                                    HandlerRow(app, onClick = { onOpenApp(app) })
+                                }
+                            }
                         }
-                    }
-                }
-            }
-            item {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    TextButton(onClick = onResetSorting) {
-                        Text("Reset app order")
                     }
                 }
             }

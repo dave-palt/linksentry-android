@@ -15,6 +15,13 @@ import javax.inject.Singleton
 /** Enumerates installed apps that can handle a URL. */
 interface HandlerResolver {
     suspend fun resolve(uri: Uri): List<HandlerApp>
+
+    /**
+     * Every launchable app on the device (launcher-style MAIN/LAUNCHER
+     * query) — the "search all apps" fallback for URLs no declared
+     * handler matches. Requires the launcher `<queries>` intent.
+     */
+    suspend fun allLaunchableApps(): List<HandlerApp>
 }
 
 /**
@@ -75,6 +82,30 @@ class DefaultHandlerResolver @Inject constructor(
     } else {
         @Suppress("DEPRECATION")
         pm.queryIntentActivities(intent, PackageManager.MATCH_ALL)
+    }
+
+    override suspend fun allLaunchableApps(): List<HandlerApp> = withContext(Dispatchers.Default) {
+        val pm = context.packageManager
+        val launcherIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        query(pm, launcherIntent)
+            .asSequence()
+            .mapNotNull { it.activityInfo }
+            // MATCH_ALL also surfaces DISABLED components (e.g. alternate
+            // launcher-icon aliases) — offering those would yield dead rows.
+            .filter { it.enabled }
+            .filter { it.packageName != context.packageName } // never offer ourselves
+            .distinctBy { it.packageName } // one row per app
+            .map {
+                HandlerApp(
+                    packageName = it.packageName,
+                    activityName = it.name,
+                    label = it.loadLabel(pm).toString(),
+                    isBrowser = false,
+                    icon = runCatching { it.loadIcon(pm) }.getOrNull(),
+                )
+            }
+            .sortedBy { it.label.lowercase() }
+            .toList()
     }
 
     private companion object {
