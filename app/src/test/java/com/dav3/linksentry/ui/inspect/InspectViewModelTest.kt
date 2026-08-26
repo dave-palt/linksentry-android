@@ -458,18 +458,23 @@ class InspectViewModelTest {
         assertEquals(3, st.allApps.size)
         // Blank query → no results yet (hint shows instead).
         assertTrue(st.appSearchResults.isEmpty())
-        // Filtering matches label and package, case-insensitively.
+        // Filtering matches label and package, case-insensitively; the
+        // search covers the SAME list — current handlers included.
         vm.onAppSearchChange("morphe")
         st = vm.uiState.value as InspectUiState.Inspect
         assertEquals(listOf("app.morphe.manager"), st.appSearchResults.map { it.packageName })
         vm.onAppSearchChange("Morphe")
         st = vm.uiState.value as InspectUiState.Inspect
         assertEquals(listOf("app.morphe.manager"), st.appSearchResults.map { it.packageName })
-        // Apps already listed as handlers never duplicate into the fallback.
+        // A handler already listed still shows up in search results
+        // (merged list), pseudo entries never do.
         vm.onAppSearchChange("chrome")
         st = vm.uiState.value as InspectUiState.Inspect
-        assertTrue(st.appSearchResults.none { it.packageName == "com.android.chrome" })
-        // Launching a fallback pick goes through the same explicit path.
+        assertEquals(listOf("com.android.chrome"), st.appSearchResults.map { it.packageName })
+        vm.onAppSearchChange("copy")
+        st = vm.uiState.value as InspectUiState.Inspect
+        assertTrue(st.appSearchResults.none { it.packageName.startsWith("@") })
+        // Launching a search pick goes through the same explicit path.
         vm.onAppSearchChange("morphe")
         st = vm.uiState.value as InspectUiState.Inspect
         vm.openWith(st.appSearchResults.first())

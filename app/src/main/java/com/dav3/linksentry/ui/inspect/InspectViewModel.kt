@@ -497,7 +497,11 @@ class InspectViewModel @Inject constructor(
             val ranked = rankHandlers(state)
             val current = _uiState.value
             if (current is InspectUiState.Inspect && current.url == state.url) {
-                _uiState.value = current.copy(handlers = ranked)
+                _uiState.value = current.copy(
+                    handlers = ranked,
+                    // Keep active search results consistent with the new list.
+                    appSearchResults = filterAppsForSearch(ranked, current.allApps, current.appSearch),
+                )
             }
         }
     }
@@ -680,8 +684,8 @@ class InspectViewModel @Inject constructor(
             if (current is InspectUiState.Inspect && current.url == state.url) {
                 _uiState.value = current.copy(
                     handlers = reranked,
-                    // Keep the fallback results consistent with the new list.
-                    appSearchResults = filterAppsForSearch(current.allApps, current.appSearch, reranked),
+                    // Keep the search results consistent with the new list.
+                    appSearchResults = filterAppsForSearch(reranked, current.allApps, current.appSearch),
                 )
             }
         }
@@ -704,7 +708,7 @@ class InspectViewModel @Inject constructor(
                 _uiState.value = current.copy(
                     allApps = apps,
                     appSearch = "",
-                    appSearchResults = filterAppsForSearch(apps, "", current.handlers),
+                    appSearchResults = filterAppsForSearch(current.handlers, apps, ""),
                 )
             }
         }
@@ -723,25 +727,26 @@ class InspectViewModel @Inject constructor(
         if (state !is InspectUiState.Inspect) return
         _uiState.value = state.copy(
             appSearch = query,
-            appSearchResults = filterAppsForSearch(state.allApps, query, state.handlers),
+            appSearchResults = filterAppsForSearch(state.handlers, state.allApps, query),
         )
     }
 }
 
 /**
- * Fallback-list filter: case-insensitive match on app label or package
- * name, excluding apps already listed as handlers for this URL. A blank
+ * Search filter for the merged app list: current handlers (ranked order
+ * preserved, pseudo entries excluded) followed by every other launchable
+ * app, filtered case-insensitively on label or package name. A blank
  * query yields nothing (the hint shows instead).
  */
 private fun filterAppsForSearch(
-    apps: List<HandlerApp>,
+    handlers: List<HandlerApp>,
+    allApps: List<HandlerApp>,
     query: String,
-    listedHandlers: List<HandlerApp>,
 ): List<HandlerApp> {
     if (query.isBlank()) return emptyList()
-    val listed = listedHandlers.map { it.packageName }.toSet()
     val q = query.trim()
-    return apps
-        .filter { it.packageName !in listed }
-        .filter { it.label.contains(q, ignoreCase = true) || it.packageName.contains(q, ignoreCase = true) }
+    fun matches(app: HandlerApp) = app.label.contains(q, ignoreCase = true) || app.packageName.contains(q, ignoreCase = true)
+    val seen = mutableSetOf<String>()
+    return (handlers.filterNot { it.packageName.startsWith("@") } + allApps)
+        .filter { seen.add(it.packageName) && matches(it) }
 }

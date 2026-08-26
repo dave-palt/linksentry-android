@@ -408,38 +408,79 @@ private fun InspectedContent(
                             .fillMaxWidth()
                             .onGloballyPositioned { sectionBounds[DemoTour.Target.APPS] = it.boundsInRoot() },
                     ) {
-                        Text("Open with", style = MaterialTheme.typography.titleMedium)
-                        if (state.handlers.isEmpty()) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
                             Text(
-                                "No installed app can open this link.",
-                                style = MaterialTheme.typography.bodyMedium,
+                                "Open with",
+                                style = MaterialTheme.typography.titleMedium,
+                                modifier = Modifier.weight(1f),
                             )
-                        }
-                        if (handlerLayout == com.dav3.linksentry.domain.model.HandlerLayout.GRID) {
-                            HandlerGrid(state.handlers, onOpenApp)
-                        } else {
-                            state.handlers.forEach { app -> HandlerRow(app, onClick = { onOpenApp(app) }) }
+                            if (tour == null && state.allApps.isEmpty()) {
+                                TextButton(onClick = onResetSorting) {
+                                    Text("Reset app order")
+                                }
+                            }
                         }
                         // Tour sandbox: the fallback is hidden during the tour.
-                        if (tour == null) {
-                            AppSearchSection(
-                                state = state,
-                                onOpenApp = onOpenApp,
-                                onOpenAppSearch = onOpenAppSearch,
-                                onCloseAppSearch = onCloseAppSearch,
-                                onAppSearchChange = onAppSearchChange,
+                        if (tour != null) {
+                            if (state.handlers.isEmpty()) {
+                                Text(
+                                    "No installed app can open this link.",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                            }
+                            if (handlerLayout == com.dav3.linksentry.domain.model.HandlerLayout.GRID) {
+                                HandlerGrid(state.handlers, onOpenApp)
+                            } else {
+                                state.handlers.forEach { app -> HandlerRow(app, onClick = { onOpenApp(app) }) }
+                            }
+                        } else if (state.allApps.isEmpty()) {
+                            if (state.handlers.isEmpty()) {
+                                Text(
+                                    "No installed app can open this link.",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                            }
+                            TextButton(onClick = onOpenAppSearch) {
+                                Icon(Icons.Filled.Search, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text("Can't see an app? Search all apps")
+                            }
+                            if (handlerLayout == com.dav3.linksentry.domain.model.HandlerLayout.GRID) {
+                                HandlerGrid(state.handlers, onOpenApp)
+                            } else {
+                                state.handlers.forEach { app -> HandlerRow(app, onClick = { onOpenApp(app) }) }
+                            }
+                        } else {
+                            // Search mode: the SAME list, filtered across every
+                            // launchable app (handlers included).
+                            OutlinedTextField(
+                                value = state.appSearch,
+                                onValueChange = onAppSearchChange,
+                                placeholder = { Text("Filter by app or package name") },
+                                singleLine = true,
+                                trailingIcon = {
+                                    TextButton(onClick = onCloseAppSearch) { Text("Close") }
+                                },
+                                modifier = Modifier.fillMaxWidth(),
                             )
+                            when {
+                                state.appSearch.isBlank() -> Text(
+                                    "Type to search ${state.allApps.size} installed apps.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                state.appSearchResults.isEmpty() -> Text(
+                                    "No apps match \"${state.appSearch}\".",
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                                else -> state.appSearchResults.forEach { app ->
+                                    HandlerRow(app, onClick = { onOpenApp(app) })
+                                }
+                            }
                         }
-                    }
-                }
-            }
-            item {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    TextButton(onClick = onResetSorting) {
-                        Text("Reset app order")
                     }
                 }
             }
@@ -1350,61 +1391,6 @@ private fun HandlerGrid(apps: List<HandlerApp>, onOpenApp: (HandlerApp) -> Unit)
                         }
                     }
                 }
-            }
-        }
-    }
-}
-
-/**
- * "Search all apps" fallback below the handler list: some apps can open a
- * link without declaring it in their manifest (or only match narrower
- * paths), so they never appear above. This lists every launchable app for
- * a manual, explicit launch.
- */
-@Composable
-private fun AppSearchSection(
-    state: InspectUiState.Inspect,
-    onOpenApp: (HandlerApp) -> Unit,
-    onOpenAppSearch: () -> Unit,
-    onCloseAppSearch: () -> Unit,
-    onAppSearchChange: (String) -> Unit,
-) {
-    if (state.allApps.isEmpty()) {
-        TextButton(onClick = onOpenAppSearch) {
-            Icon(Icons.Filled.Search, contentDescription = null, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(6.dp))
-            Text("Can't see an app? Search all apps")
-        }
-        return
-    }
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        OutlinedTextField(
-            value = state.appSearch,
-            onValueChange = onAppSearchChange,
-            placeholder = { Text("Filter by app or package name") },
-            singleLine = true,
-            trailingIcon = {
-                TextButton(onClick = onCloseAppSearch) { Text("Close") }
-            },
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Text(
-            "Apps listed here did not declare support for this link — they may open their main screen and ignore it.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        when {
-            state.appSearch.isBlank() -> Text(
-                "Type to search ${state.allApps.size} installed apps.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            state.appSearchResults.isEmpty() -> Text(
-                "No apps match \"${state.appSearch}\".",
-                style = MaterialTheme.typography.bodySmall,
-            )
-            else -> state.appSearchResults.forEach { app ->
-                HandlerRow(app, onClick = { onOpenApp(app) })
             }
         }
     }
