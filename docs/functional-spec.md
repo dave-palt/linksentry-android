@@ -44,7 +44,13 @@ history** (per-link opt-out; demo links are pre-checked and locked).
 Copy URL / Copy cleaned URL / Share ride the handler list as pseudo
 entries (distinct icons). Tapping a handler opens that app via an
 **explicit** intent (component set). DANGER links hide the handler
-list behind the danger gate (F6).
+list behind the danger gate (F6). The "Open with" header row carries
+"Reset app order" right-aligned in danger-red (hidden while the search
+field has input). Below the label, an always-present bordered search
+field ("Can't see an app? Search all apps" as placeholder) filters the
+SAME list — current handlers (ranked order, pseudo entries excluded)
+plus every other launchable app — from the first typed character
+(whitespace trimmed); blank input keeps the default ranked list.
 
 ### F3 — Danger gate
 Links whose worst signal is DANGER replace the handler list with a red
