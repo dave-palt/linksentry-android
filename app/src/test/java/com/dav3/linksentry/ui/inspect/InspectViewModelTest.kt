@@ -115,11 +115,15 @@ class InspectViewModelTest {
 
     private class FakeSettings(s: AppSettings = AppSettings()) : SettingsRepository {
         override val settings = MutableStateFlow(s)
+
         override suspend fun setRecordHistory(enabled: Boolean) {}
         override suspend fun setRetentionDays(days: Int?) {}
         override suspend fun setTheme(mode: com.dav3.linksentry.domain.model.ThemeMode) {}
         override suspend fun setHandlerLayout(layout: com.dav3.linksentry.domain.model.HandlerLayout) {}
         override suspend fun setOpenCleaned(enabled: Boolean) {}
+        override suspend fun setAutoCloseOnOpen(enabled: Boolean) {
+            settings.value = settings.value.copy(autoCloseOnOpen = enabled)
+        }
 
         private val customTracking = mutableSetOf<String>()
 
@@ -918,6 +922,31 @@ class InspectViewModelTest {
         assertEquals(1, vm.closeRequests.value)
         // History write landed BEFORE the close signal.
         assertTrue(history.records.any { it.third == HistoryAction.OPENED_WITH })
+    }
+
+    @Test
+    fun `auto-close disabled in settings keeps the app open`() = runTest(dispatcher) {
+        settingsRepo.settings.value = settingsRepo.settings.value.copy(autoCloseOnOpen = false)
+        val vm = vm()
+        vm.submitText("https://normal.com/a")
+        dispatcher.scheduler.advanceUntilIdle()
+        vm.openWith(chrome)
+        dispatcher.scheduler.advanceUntilIdle()
+        assertEquals(0, vm.closeRequests.value)
+        // The launch + history write still happened.
+        assertTrue(actions.opened.isNotEmpty())
+        assertTrue(history.records.any { it.third == HistoryAction.OPENED_WITH })
+    }
+
+    @Test
+    fun `clearAndClose closes regardless of the auto-close setting`() = runTest(dispatcher) {
+        settingsRepo.settings.value = settingsRepo.settings.value.copy(autoCloseOnOpen = false)
+        val vm = vm()
+        vm.submitText("https://normal.com/a")
+        dispatcher.scheduler.advanceUntilIdle()
+        vm.clearAndClose()
+        dispatcher.scheduler.advanceUntilIdle()
+        assertEquals(1, vm.closeRequests.value)
     }
 
     @Test

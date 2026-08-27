@@ -406,8 +406,12 @@ class InspectViewModel @Inject constructor(
                     history.recordApp(state.url, app.packageName, app.activityName, app.label)
                 }
                 // Auto-close LAST: finish() cancels viewModelScope, so every
-                // write above must already be done when this fires.
-                _closeRequests.value++
+                // write above must already be done when this fires. Gated by
+                // the "Close after opening" setting (Clear & close always
+                // closes — it's an explicit exit).
+                if (settingsRepo.settings.first().autoCloseOnOpen) {
+                    _closeRequests.value++
+                }
             }
         }
     }

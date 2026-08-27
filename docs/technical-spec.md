@@ -61,6 +61,7 @@ Demo seen-flags share the same store as `demo_seen_<key>` Boolean keys
 | `retention_days` | Int | absent → 30 | explicit `0` = forever (null) |
 | `theme` | String | `SYSTEM` | enum name |
 | `history_exclusions` | StringSet | empty | per-link history opt-out |
+| `auto_close_on_open` | Boolean | true | close LinkSentry after a handler launch (F1) |
 
 Room `history` table (v5): `id PK autogen, url UNIQUE, host, severity?, action, openCount, lastAppPackage?, lastAppActivity?, lastAppLabel?, timestamp` — migration path v1→v2 (handler prefs), v2→v3 (danger overrides + `history` unique index collapse), v3→v4 (openCount + last-app columns), v4→v5 (normalize semantics: split inspect/open/action bumps; openCount reset for inspect-only rows). Legacy format reference (v1): `id PK autogen, url, host, severity?, action,
 timestamp`. DAO: insert, observeAll (DESC, LIMIT 200), deleteOlderThan,

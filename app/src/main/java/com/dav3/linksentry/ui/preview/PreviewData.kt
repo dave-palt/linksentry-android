@@ -63,6 +63,8 @@ class FakeSettingsRepo(initial: AppSettings = AppSettings()) : SettingsRepositor
 
     override suspend fun setOpenCleaned(enabled: Boolean) = Unit
 
+    override suspend fun setAutoCloseOnOpen(enabled: Boolean) = Unit
+
     override suspend fun addCustomTrackingParam(name: String) = Unit
 
     override suspend fun removeCustomTrackingParam(name: String) = Unit

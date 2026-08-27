@@ -16,6 +16,9 @@ interface SettingsRepository {
 
     suspend fun setOpenCleaned(enabled: Boolean)
 
+    /** Auto-close LinkSentry after a handler launch. */
+    suspend fun setAutoCloseOnOpen(enabled: Boolean)
+
     /** Remember a param name as "always remove" (user-taught tracker). */
     suspend fun addCustomTrackingParam(name: String)
 

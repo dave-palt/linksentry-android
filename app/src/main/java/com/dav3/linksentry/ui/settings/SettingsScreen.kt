@@ -109,6 +109,10 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { repository.setOpenCleaned(enabled) }
     }
 
+    fun setAutoCloseOnOpen(enabled: Boolean) {
+        viewModelScope.launch { repository.setAutoCloseOnOpen(enabled) }
+    }
+
     fun openDefaultAppsSettings() = actions.openDefaultAppsSettings()
 }
 
@@ -136,6 +140,7 @@ fun SettingsScreen(
         onOpenDefaultAppsSettings = viewModel::openDefaultAppsSettings,
         onSetHandlerLayout = viewModel::setHandlerLayout,
         onSetOpenCleaned = viewModel::setOpenCleaned,
+        onSetAutoCloseOnOpen = viewModel::setAutoCloseOnOpen,
         onResetSorting = viewModel::resetHandlerSorting,
         dangerOverrides = overrides,
         onRevokeOverride = viewModel::revokeOverride,
@@ -156,6 +161,7 @@ fun SettingsContent(
     onOpenDefaultAppsSettings: () -> Unit,
     onSetHandlerLayout: (com.dav3.linksentry.domain.model.HandlerLayout) -> Unit = {},
     onSetOpenCleaned: (Boolean) -> Unit = {},
+    onSetAutoCloseOnOpen: (Boolean) -> Unit = {},
     onResetSorting: () -> Unit = {},
     dangerOverrides: List<com.dav3.linksentry.domain.model.DangerOverride> = emptyList(),
     onRevokeOverride: (com.dav3.linksentry.domain.model.DangerOverride) -> Unit = {},
@@ -270,6 +276,22 @@ fun SettingsContent(
                 )
             }
             Switch(checked = settings.openCleaned, onCheckedChange = onSetOpenCleaned)
+        }
+
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("Close after opening", style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    "LinkSentry closes itself (and leaves recents) as soon as a link opens in your chosen app.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(checked = settings.autoCloseOnOpen, onCheckedChange = onSetAutoCloseOnOpen)
         }
 
         Row(

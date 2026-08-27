@@ -34,12 +34,15 @@ PackageManager resolution lands. If the link arrives while the app is
 open, `onNewIntent` re-runs inspection.
 
 Opening the link through any handler **closes LinkSentry automatically**
-once the launch succeeds and history/usage writes have landed — the user
-lands straight in the chosen app, with no LinkSentry task left behind. A
-danger-red **Clear & close** button (top-right of the inspect screen,
-hidden during the guided tour) drops the inspected link and finishes the
-activity, returning to whatever the user was doing before the link
-opened LinkSentry.
+(once the launch succeeds and history/usage writes have landed — the user
+lands straight in the chosen app, with no LinkSentry task left in
+recents). The behavior is governed by the **"Close after opening"**
+setting (Settings, default on); turning it off keeps LinkSentry open
+behind the chosen app. A danger-red **Clear & close** button (top-right
+of the inspect screen, hidden during the guided tour) drops the
+inspected link and finishes the activity regardless of that setting —
+it's an explicit exit — returning the user to whatever they were doing
+before the link opened LinkSentry.
 
 ### F2 — Cleanup & dispatch
 The inspect screen leads with a merged hero card ("You are about to open"):
