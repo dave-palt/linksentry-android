@@ -26,9 +26,20 @@ history" banner; Settings shows a one-time tip.
 
 ### F1 — Intercept (default browser)
 User taps an http/https link anywhere in the OS → LinkSentry opens
-(singleTop) on Inspect. Nothing is fetched. The screen shows: host headline,
-full raw URL, verdict card, signal list, URL breakdown, and the handler list.
-If the link arrives while the app is open, `onNewIntent` re-runs inspection.
+(singleTop) on Inspect. Nothing is fetched. The screen paints in two
+phases: the analysis (host headline, full raw URL, verdict card, signal
+list, URL breakdown) appears immediately — pure local computation — while
+the handler list shows a brief "Finding apps…" indicator until
+PackageManager resolution lands. If the link arrives while the app is
+open, `onNewIntent` re-runs inspection.
+
+Opening the link through any handler **closes LinkSentry automatically**
+once the launch succeeds and history/usage writes have landed — the user
+lands straight in the chosen app, with no LinkSentry task left behind. A
+danger-red **Clear & close** button (top-right of the inspect screen,
+hidden during the guided tour) drops the inspected link and finishes the
+activity, returning to whatever the user was doing before the link
+opened LinkSentry.
 
 ### F2 — Cleanup & dispatch
 The inspect screen leads with a merged hero card ("You are about to open"):
@@ -43,7 +54,8 @@ three aligned inline toggles: **Open cleaned link**, **Enforce HTTPS**
 history** (per-link opt-out; demo links are pre-checked and locked).
 Copy URL / Copy cleaned URL / Share ride the handler list as pseudo
 entries (distinct icons). Tapping a handler opens that app via an
-**explicit** intent (component set). DANGER links hide the handler
+**explicit** intent (component set), then closes LinkSentry (see F1).
+DANGER links hide the handler
 list behind the danger gate (F6). The "Open with" header row carries
 "Reset app order" right-aligned in danger-red (hidden while the search
 field has input). Below the label, an always-present bordered search

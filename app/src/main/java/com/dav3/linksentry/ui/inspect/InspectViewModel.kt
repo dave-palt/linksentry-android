@@ -87,6 +87,9 @@ sealed interface InspectUiState {
         val appSearch: String = "",
         /** Filtered fallback results (apps not already listed above). */
         val appSearchResults: List<HandlerApp> = emptyList(),
+        /** True while the handler list / all-apps fallback is still
+         *  resolving (analysis already on screen — see submitText). */
+        val handlersLoading: Boolean = false,
     ) : InspectUiState
 
     /** Guided-tour progress; [index] is into [DemoTour.steps]. */
@@ -114,6 +117,17 @@ class InspectViewModel @Inject constructor(
 
     private val _uiState = MutableStateFlow<InspectUiState>(InspectUiState.Manual())
     val uiState: StateFlow<InspectUiState> = _uiState.asStateFlow()
+
+    /**
+     * Monotonic counter of "the Activity should finish now" requests.
+     * Incremented after a successful handler launch (once history/pref
+     * writes have landed — viewModelScope is cancelled on finish, so the
+     * signal must be the LAST thing) and from clearAndClose(). The Activity
+     * layer collects this and calls finish(); ViewModels never hold an
+     * Activity reference.
+     */
+    private val _closeRequests = MutableStateFlow(0)
+    val closeRequests: StateFlow<Int> = _closeRequests.asStateFlow()
 
     init {
         // Immich-style "forced" intro: the tour starts by itself the very
@@ -205,22 +219,6 @@ class InspectViewModel @Inject constructor(
                 _uiState.value = InspectUiState.Invalid(trimmed)
                 return@launch
             }
-            val resolved = resolver.resolve(Uri.parse(analysis.facts.raw))
-            // Launcher-style ordering: user's most-recently/most-used apps
-            // for this domain first, then per-scheme, then browsers A→Z.
-            val usage = handlerPrefs.observeAll().first()
-            val ranked = HandlerRanker.rank(
-                handlers = resolved,
-                usage = usage,
-                host = analysis.facts.host,
-                scheme = analysis.facts.scheme,
-            )
-            // Copy actions ride along as pseudo entries, usage-ranked per
-            // domain like real apps so frequent copiers get them on top.
-            val handlers = attachPseudoEntries(ranked, usage, analysis.facts.host)
-            // Danger gate: only for DANGER-severity links without a stored
-            // user green-light (per host, or for links with identical DANGER
-            // signals — "same link types are not flagged anymore").
             val dangerIds = analysis.verdict.signals
                 .filter { it.severity == Severity.DANGER }
                 .map { it.id }
@@ -233,19 +231,15 @@ class InspectViewModel @Inject constructor(
             val overrideActive = hostOverride || signalsOverride
             val settingsNow = settingsRepo.settings.first()
             val custom = settingsNow.customTrackingParams
-            // The search field is always visible now — load every
-            // launchable app alongside the handler resolution so filtering
-            // is instant when the user types.
-            val allApps = if (DemoLinks.isDemo(analysis.facts.raw)) {
-                emptyList() // tour/demo sandbox: no real app data
-            } else {
-                resolver.allLaunchableApps()
-            }
-            val newState = InspectUiState.Inspect(
+            // PHASE 1 — the analysis goes on screen immediately. UrlAnalyzer
+            // is pure Kotlin (sub-millisecond); PackageManager work (labels,
+            // icons, all-apps enumeration) is what made the link appear late
+            // together with the app list, so it moves to phase 2 below.
+            _uiState.value = InspectUiState.Inspect(
                 url = analysis.facts.raw,
                 facts = analysis.facts,
                 verdict = analysis.verdict,
-                handlers = handlers,
+                handlers = emptyList(),
                 cleanedUrl = UrlAnalyzer.cleanedUrl(analysis.facts),
                 cleanup = UrlAnalyzer.cleanup(analysis.facts, extraTracking = custom),
                 openCleaned = settingsNow.openCleaned,
@@ -253,9 +247,8 @@ class InspectViewModel @Inject constructor(
                 dangerGate = analysis.verdict.worst == Severity.DANGER && !overrideActive,
                 overrideActive = overrideActive,
                 historyExcluded = analysis.facts.raw in settingsNow.historyExclusions,
-                allApps = allApps,
+                handlersLoading = true,
             )
-            _uiState.value = newState
             // Sandbox: regular inspections are recorded; tour navigation is
             // not (tour states are built by applyTourStep, which never records).
             // Demo links and user-excluded URLs never touch history.
@@ -267,6 +260,26 @@ class InspectViewModel @Inject constructor(
                     host = analysis.facts.host,
                     severity = analysis.verdict.worst,
                     action = HistoryAction.INSPECTED,
+                )
+            }
+
+            // PHASE 2 — handler resolution + always-visited app search data
+            // fill in as a second emission; only the "Open with" section
+            // waits for them. Skipped when the user already moved on.
+            val handlers = buildHandlers(analysis.facts.raw, analysis.facts.host, analysis.facts.scheme)
+            val allApps = if (DemoLinks.isDemo(analysis.facts.raw)) {
+                emptyList() // tour/demo sandbox: no real app data
+            } else {
+                resolver.allLaunchableApps()
+            }
+            val current = _uiState.value
+            if (current is InspectUiState.Inspect && current.url == analysis.facts.raw) {
+                _uiState.value = current.copy(
+                    handlers = handlers,
+                    allApps = allApps,
+                    handlersLoading = false,
+                    // Keep any search the user already typed consistent.
+                    appSearchResults = filterAppsForSearch(handlers, allApps, current.appSearch),
                 )
             }
         }
@@ -392,6 +405,9 @@ class InspectViewModel @Inject constructor(
                     // Remember the handler so History can re-open directly.
                     history.recordApp(state.url, app.packageName, app.activityName, app.label)
                 }
+                // Auto-close LAST: finish() cancels viewModelScope, so every
+                // write above must already be done when this fires.
+                _closeRequests.value++
             }
         }
     }
@@ -467,6 +483,17 @@ class InspectViewModel @Inject constructor(
             input = kept,
             isDefaultBrowser = roleChecker.isDefaultBrowser(),
         )
+    }
+
+    /**
+     * Clear/close button: drop the analysis and ask the Activity to finish
+     * (returns to whatever the user was doing before the link opened
+     * LinkSentry). The state reset is synchronous so finish()-cancelled
+     * coroutines can't leave a stale Inspect screen behind.
+     */
+    fun clearAndClose() {
+        reset()
+        _closeRequests.value++
     }
 
     /** Track the editable URL field in any mode. */

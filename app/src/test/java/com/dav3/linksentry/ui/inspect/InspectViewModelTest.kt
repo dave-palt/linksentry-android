@@ -7,6 +7,7 @@ import com.dav3.linksentry.domain.model.DemoTour
 import com.dav3.linksentry.domain.model.HandlerApp
 import com.dav3.linksentry.domain.model.HistoryAction
 import com.dav3.linksentry.domain.model.LinkRecord
+import com.dav3.linksentry.domain.model.PseudoHandler
 import com.dav3.linksentry.domain.model.Severity
 import com.dav3.linksentry.domain.repository.HistoryRepository
 import com.dav3.linksentry.domain.repository.SettingsRepository
@@ -74,7 +75,9 @@ class InspectViewModelTest {
         val copied = mutableListOf<String>()
         var shared: String? = null
         var settingsOpened = false
+        var failOpens = false
         override fun openWith(app: HandlerApp, url: String): Boolean {
+            if (failOpens) return false
             opened.add(app to url)
             return true
         }
@@ -867,5 +870,76 @@ class InspectViewModelTest {
             dispatcher.scheduler.advanceUntilIdle()
         }
         assertTrue(history.records.isEmpty())
+    }
+
+    // ---------- two-phase emission (fast first paint) ----------
+
+    @Test
+    fun `analysis shows before handlers resolve`() = runTest(dispatcher) {
+        // Handler resolution suspended forever: phase 1 must still emit.
+        val neverResolving = object : HandlerResolver by resolver {
+            override suspend fun resolve(uri: Uri): List<HandlerApp> = kotlinx.coroutines.CompletableDeferred<List<HandlerApp>>().await()
+        }
+        val vm = InspectViewModel(neverResolving, actions, history, settingsRepo, role, handlerPrefs, dangerOverrides, demoRepo)
+        vm.submitText("https://fast-paint.example/a")
+        dispatcher.scheduler.advanceUntilIdle()
+        val state = vm.uiState.value as InspectUiState.Inspect
+        assertEquals("https://fast-paint.example/a", state.url)
+        assertTrue(state.handlers.isEmpty())
+        assertTrue(state.handlersLoading)
+        // The analysis (verdict + cleanup) is already on screen.
+        assertNotNull(state.verdict)
+        assertTrue(state.cleanup.url.isNotEmpty())
+    }
+
+    @Test
+    fun `handlers and allApps fill in phase 2`() = runTest(dispatcher) {
+        val vm = vm()
+        vm.submitText("https://a.com/p")
+        dispatcher.scheduler.advanceUntilIdle()
+        val state = vm.uiState.value as InspectUiState.Inspect
+        assertFalse(state.handlersLoading)
+        // Ranked handlers + pseudo (copy/share) entries present.
+        assertTrue(state.handlers.any { it.packageName == "com.android.chrome" })
+        assertTrue(state.handlers.any { it.packageName == PseudoHandler.COPY })
+        assertEquals(resolver.allAppsResult.size, state.allApps.size)
+    }
+
+    // ---------- auto-close ----------
+
+    @Test
+    fun `successful open requests activity close`() = runTest(dispatcher) {
+        val vm = vm()
+        vm.submitText("https://normal.com/a")
+        dispatcher.scheduler.advanceUntilIdle()
+        assertEquals(0, vm.closeRequests.value)
+        vm.openWith(chrome)
+        dispatcher.scheduler.advanceUntilIdle()
+        assertEquals(1, vm.closeRequests.value)
+        // History write landed BEFORE the close signal.
+        assertTrue(history.records.any { it.third == HistoryAction.OPENED_WITH })
+    }
+
+    @Test
+    fun `failed open does not close`() = runTest(dispatcher) {
+        actions.failOpens = true
+        val vm = vm()
+        vm.submitText("https://normal.com/a")
+        dispatcher.scheduler.advanceUntilIdle()
+        vm.openWith(chrome)
+        dispatcher.scheduler.advanceUntilIdle()
+        assertEquals(0, vm.closeRequests.value)
+        assertTrue(history.records.none { it.third == HistoryAction.OPENED_WITH })
+    }
+
+    @Test
+    fun `clearAndClose resets to Manual and requests close`() = runTest(dispatcher) {
+        val vm = vm()
+        vm.submitText("https://normal.com/a")
+        dispatcher.scheduler.advanceUntilIdle()
+        vm.clearAndClose()
+        dispatcher.scheduler.advanceUntilIdle()
+        assertTrue(vm.uiState.value is InspectUiState.Manual)
+        assertEquals(1, vm.closeRequests.value)
     }
 }
