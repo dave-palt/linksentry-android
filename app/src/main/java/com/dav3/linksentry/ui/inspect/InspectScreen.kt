@@ -42,11 +42,16 @@ fun InspectScreen(
     val context = LocalContext.current
 
     // Auto-close: a handler was successfully launched (and its history/pref
-    // writes landed) or the user hit Clear & close — finish so LinkSentry
-    // doesn't linger behind the opened app. drop(1) skips the initial 0.
+    // writes landed) or the user hit Clear & close — close so LinkSentry
+    // doesn't linger behind the opened app. finishAndRemoveTask() (not plain
+    // finish()) also drops the recents card — plain finish() kept a dead
+    // LinkSentry entry in "swipe up and hold". drop(1) skips the initial 0.
     LaunchedEffect(context) {
         viewModel.closeRequests.drop(1).collect {
-            context.findActivity()?.finish()
+            context.findActivity()?.let { activity ->
+                if (activity.isFinishing) return@let
+                activity.finishAndRemoveTask()
+            }
         }
     }
 
