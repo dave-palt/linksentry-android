@@ -416,11 +416,16 @@ class InspectViewModel @Inject constructor(
                 // write above must already be done when this fires. Gated by
                 // the "Close after opening" setting (Clear & close always
                 // closes — it's an explicit exit). When staying open, mark
-                // the link for removal at the next focus loss instead.
-                if (settingsRepo.settings.first().autoCloseOnOpen) {
+                // the link for removal at the next focus loss instead — but
+                // only when it was actually SAVED to history (it's
+                // recoverable from there). Demo links, per-link exclusions
+                // and history-recording-off keep the link on screen: nothing
+                // would remain of it otherwise.
+                val settingsNow = settingsRepo.settings.first()
+                if (settingsNow.autoCloseOnOpen) {
                     _closeRequests.value++
                 } else {
-                    clearOnPause = true
+                    clearOnPause = shouldRecord(state) && settingsNow.recordHistory
                 }
             }
         }

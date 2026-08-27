@@ -977,6 +977,33 @@ class InspectViewModelTest {
     }
 
     @Test
+    fun `opened link NOT saved to history survives backgrounding`() = runTest(dispatcher) {
+        settingsRepo.settings.value = settingsRepo.settings.value.copy(autoCloseOnOpen = false)
+        // Case 1: history recording fully off.
+        settingsRepo.settings.value = settingsRepo.settings.value.copy(recordHistory = false)
+        var vm = vm()
+        vm.submitText("https://normal.com/a")
+        dispatcher.scheduler.advanceUntilIdle()
+        vm.openWith(chrome)
+        dispatcher.scheduler.advanceUntilIdle()
+        vm.onAppBackground()
+        assertTrue(vm.uiState.value is InspectUiState.Inspect)
+
+        // Case 2: this exact link opted out of history.
+        settingsRepo.settings.value = settingsRepo.settings.value.copy(recordHistory = true)
+        vm = vm()
+        vm.submitText("https://example.com/private")
+        dispatcher.scheduler.advanceUntilIdle()
+        vm.toggleHistoryExcluded()
+        dispatcher.scheduler.advanceUntilIdle()
+        vm.openWith(chrome)
+        dispatcher.scheduler.advanceUntilIdle()
+        vm.onAppBackground()
+        // Excluded → not recoverable in History → stays on screen.
+        assertTrue(vm.uiState.value is InspectUiState.Inspect)
+    }
+
+    @Test
     fun `failed open does not close`() = runTest(dispatcher) {
         actions.failOpens = true
         val vm = vm()
