@@ -38,7 +38,9 @@ Opening the link through any handler **closes LinkSentry automatically**
 lands straight in the chosen app, with no LinkSentry task left in
 recents). The behavior is governed by the **"Close after opening"**
 setting (Settings, default on); turning it off keeps LinkSentry open
-behind the chosen app. A danger-red **Clear & close** button (top-right
+behind the chosen app — in that mode the opened link is cleared from the
+inspect screen as the app loses focus, so returning to LinkSentry never
+shows the last opened link. A danger-red **Clear & close** button (top-right
 of the inspect screen, hidden during the guided tour) drops the
 inspected link and finishes the activity regardless of that setting —
 it's an explicit exit — returning the user to whatever they were doing

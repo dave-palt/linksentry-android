@@ -129,6 +129,13 @@ class InspectViewModel @Inject constructor(
     private val _closeRequests = MutableStateFlow(0)
     val closeRequests: StateFlow<Int> = _closeRequests.asStateFlow()
 
+    /**
+     * Set when a link was opened but the app stays open (auto-close off):
+     * the inspected link is dropped from the screen as the app loses
+     * focus, so returning to LinkSentry never shows the last link.
+     */
+    private var clearOnPause = false
+
     init {
         // Immich-style "forced" intro: the tour starts by itself the very
         // first time the app is opened, walking every Inspect section with
@@ -408,9 +415,12 @@ class InspectViewModel @Inject constructor(
                 // Auto-close LAST: finish() cancels viewModelScope, so every
                 // write above must already be done when this fires. Gated by
                 // the "Close after opening" setting (Clear & close always
-                // closes — it's an explicit exit).
+                // closes — it's an explicit exit). When staying open, mark
+                // the link for removal at the next focus loss instead.
                 if (settingsRepo.settings.first().autoCloseOnOpen) {
                     _closeRequests.value++
+                } else {
+                    clearOnPause = true
                 }
             }
         }
@@ -483,6 +493,7 @@ class InspectViewModel @Inject constructor(
             is InspectUiState.Inspect -> current.input
             is InspectUiState.Invalid -> current.input
         }
+        clearOnPause = false
         _uiState.value = InspectUiState.Manual(
             input = kept,
             isDefaultBrowser = roleChecker.isDefaultBrowser(),
@@ -520,6 +531,19 @@ class InspectViewModel @Inject constructor(
         val current = _uiState.value
         if (current is InspectUiState.Manual) {
             _uiState.value = current.copy(isDefaultBrowser = roleChecker.isDefaultBrowser())
+        }
+    }
+
+    /**
+     * Called as the app loses focus: if a link was opened while staying
+     * open (auto-close off), drop it now — returning to LinkSentry must
+     * never show the last opened link. Manual entry (nothing opened)
+     * survives focus loss untouched.
+     */
+    fun onAppBackground() {
+        if (clearOnPause) {
+            clearOnPause = false
+            reset()
         }
     }
 

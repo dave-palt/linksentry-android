@@ -82,10 +82,12 @@ fun InspectScreen(
     // every resume: apps get installed/updated and link-handling defaults
     // get flipped while LinkSentry is in the background — the "Open with"
     // list must reflect the device's current state, not submit-time.
+    // onPause: with auto-close off, an OPENED link is dropped here so the
+    // app never reopens showing the last link.
     LifecycleResumeEffect(Unit) {
         viewModel.refreshRole()
         viewModel.refreshHandlers()
-        onPauseOrDispose { }
+        onPauseOrDispose { viewModel.onAppBackground() }
     }
 
     Scaffold(

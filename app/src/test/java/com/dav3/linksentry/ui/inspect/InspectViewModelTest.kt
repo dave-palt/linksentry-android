@@ -949,6 +949,33 @@ class InspectViewModelTest {
         assertEquals(1, vm.closeRequests.value)
     }
 
+    // ---------- clear-on-focus-loss (auto-close off) ----------
+
+    @Test
+    fun `opened link is cleared when app backgrounds with auto-close off`() = runTest(dispatcher) {
+        settingsRepo.settings.value = settingsRepo.settings.value.copy(autoCloseOnOpen = false)
+        val vm = vm()
+        vm.submitText("https://normal.com/a")
+        dispatcher.scheduler.advanceUntilIdle()
+        vm.openWith(chrome)
+        dispatcher.scheduler.advanceUntilIdle()
+        // Still inspecting right after the launch (clear happens on pause,
+        // not instantly — no visible flash behind the launch animation).
+        assertTrue(vm.uiState.value is InspectUiState.Inspect)
+        vm.onAppBackground()
+        assertTrue(vm.uiState.value is InspectUiState.Manual)
+    }
+
+    @Test
+    fun `inspected but not opened link survives backgrounding`() = runTest(dispatcher) {
+        val vm = vm()
+        vm.submitText("https://normal.com/a")
+        dispatcher.scheduler.advanceUntilIdle()
+        vm.onAppBackground()
+        // No launch happened: the analysis stays.
+        assertTrue(vm.uiState.value is InspectUiState.Inspect)
+    }
+
     @Test
     fun `failed open does not close`() = runTest(dispatcher) {
         actions.failOpens = true
