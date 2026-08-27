@@ -25,6 +25,7 @@ class SettingsRepositoryImpl @Inject constructor(
         val THEME = stringPreferencesKey("theme")
         val HANDLER_LAYOUT = stringPreferencesKey("handler_layout")
         val OPEN_CLEANED = booleanPreferencesKey("open_cleaned")
+        val AUTO_CLOSE_ON_OPEN = booleanPreferencesKey("auto_close_on_open")
         val CUSTOM_TRACKING = stringPreferencesKey("custom_tracking_params")
         val HISTORY_EXCLUSIONS = stringPreferencesKey("history_exclusions")
     }
@@ -43,6 +44,7 @@ class SettingsRepositoryImpl @Inject constructor(
             theme = p[Keys.THEME]?.let { runCatching { ThemeMode.valueOf(it) }.getOrNull() }
                 ?: ThemeMode.SYSTEM,
             openCleaned = p[Keys.OPEN_CLEANED] ?: false,
+            autoCloseOnOpen = p[Keys.AUTO_CLOSE_ON_OPEN] ?: true,
             customTrackingParams = (p[Keys.CUSTOM_TRACKING] ?: "")
                 .split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet(),
             handlerLayout = p[Keys.HANDLER_LAYOUT]?.let {
@@ -75,6 +77,10 @@ class SettingsRepositoryImpl @Inject constructor(
 
     override suspend fun setOpenCleaned(enabled: Boolean) {
         dataStore.edit { it[Keys.OPEN_CLEANED] = enabled }
+    }
+
+    override suspend fun setAutoCloseOnOpen(enabled: Boolean) {
+        dataStore.edit { it[Keys.AUTO_CLOSE_ON_OPEN] = enabled }
     }
 
     override suspend fun addCustomTrackingParam(name: String) {

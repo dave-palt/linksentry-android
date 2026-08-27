@@ -174,6 +174,8 @@ sealed interface DangerOverride {
 data class AppSettings(
     /** Handlers open the cleaned URL when enabled. */
     val openCleaned: Boolean = false,
+    /** Close LinkSentry automatically after a link is opened (F1). */
+    val autoCloseOnOpen: Boolean = true,
     /** Param names the user marked as "always remove" (custom trackers). */
     val customTrackingParams: Set<String> = emptySet(),
     val recordHistory: Boolean = true,

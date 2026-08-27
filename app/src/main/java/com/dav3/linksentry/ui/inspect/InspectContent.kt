@@ -108,6 +108,7 @@ fun InspectContent(
     onSubmitDemo: (String) -> Unit = {},
     onOpenBrowserSettings: () -> Unit = {},
     onInspectNew: () -> Unit = {},
+    onClearAndClose: () -> Unit = {},
     handlerLayout: com.dav3.linksentry.domain.model.HandlerLayout = com.dav3.linksentry.domain.model.HandlerLayout.LIST,
     onToggleKeepParam: (String) -> Unit = {},
     onToggleKeepCredentials: () -> Unit = {},
@@ -144,6 +145,7 @@ fun InspectContent(
             onShare,
             onReinspect,
             onInspectNew,
+            onClearAndClose,
             handlerLayout,
             onToggleKeepParam,
             onToggleKeepCredentials,
@@ -253,6 +255,7 @@ private fun InspectedContent(
     onShare: () -> Unit,
     onReinspect: () -> Unit,
     onInspectNew: () -> Unit = {},
+    onClearAndClose: () -> Unit = {},
     handlerLayout: com.dav3.linksentry.domain.model.HandlerLayout = com.dav3.linksentry.domain.model.HandlerLayout.LIST,
     onToggleKeepParam: (String) -> Unit = {},
     onToggleKeepCredentials: () -> Unit = {},
@@ -323,6 +326,25 @@ private fun InspectedContent(
             ),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
+            // Clear & close: drops the link and finishes the activity —
+            // back to whatever app handed us the URL. DANGER-red per the
+            // standing destructive-control rule; hidden during the tour
+            // (sandbox: nothing exits).
+            if (tour == null) {
+                item(key = "clear-close") {
+                    Row(modifier = Modifier.fillMaxWidth()) {
+                        Spacer(Modifier.weight(1f))
+                        TextButton(
+                            onClick = onClearAndClose,
+                            colors = androidx.compose.material3.ButtonDefaults.textButtonColors(
+                                contentColor = Color(0xFFDC2626),
+                            ),
+                        ) {
+                            Text("Clear & close")
+                        }
+                    }
+                }
+            }
             item(key = "hero") {
                 Column(
                     modifier = Modifier
@@ -436,7 +458,24 @@ private fun InspectedContent(
                             )
                         }
                         val searching = state.appSearch.isNotBlank()
-                        if (!searching) {
+                        if (state.handlersLoading && !searching) {
+                            // Phase 2 in flight: analysis is on screen, the
+                            // PackageManager is still enumerating handlers.
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            ) {
+                                androidx.compose.material3.CircularProgressIndicator(
+                                    modifier = Modifier.size(20.dp),
+                                    strokeWidth = 2.dp,
+                                )
+                                Text(
+                                    "Finding apps…",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        } else if (!searching) {
                             // Default: the ranked handler list (untouched).
                             if (state.handlers.isEmpty()) {
                                 Text(

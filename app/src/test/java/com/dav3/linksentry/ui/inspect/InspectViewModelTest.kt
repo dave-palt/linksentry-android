@@ -7,6 +7,7 @@ import com.dav3.linksentry.domain.model.DemoTour
 import com.dav3.linksentry.domain.model.HandlerApp
 import com.dav3.linksentry.domain.model.HistoryAction
 import com.dav3.linksentry.domain.model.LinkRecord
+import com.dav3.linksentry.domain.model.PseudoHandler
 import com.dav3.linksentry.domain.model.Severity
 import com.dav3.linksentry.domain.repository.HistoryRepository
 import com.dav3.linksentry.domain.repository.SettingsRepository
@@ -74,7 +75,9 @@ class InspectViewModelTest {
         val copied = mutableListOf<String>()
         var shared: String? = null
         var settingsOpened = false
+        var failOpens = false
         override fun openWith(app: HandlerApp, url: String): Boolean {
+            if (failOpens) return false
             opened.add(app to url)
             return true
         }
@@ -112,11 +115,15 @@ class InspectViewModelTest {
 
     private class FakeSettings(s: AppSettings = AppSettings()) : SettingsRepository {
         override val settings = MutableStateFlow(s)
+
         override suspend fun setRecordHistory(enabled: Boolean) {}
         override suspend fun setRetentionDays(days: Int?) {}
         override suspend fun setTheme(mode: com.dav3.linksentry.domain.model.ThemeMode) {}
         override suspend fun setHandlerLayout(layout: com.dav3.linksentry.domain.model.HandlerLayout) {}
         override suspend fun setOpenCleaned(enabled: Boolean) {}
+        override suspend fun setAutoCloseOnOpen(enabled: Boolean) {
+            settings.value = settings.value.copy(autoCloseOnOpen = enabled)
+        }
 
         private val customTracking = mutableSetOf<String>()
 
@@ -867,5 +874,155 @@ class InspectViewModelTest {
             dispatcher.scheduler.advanceUntilIdle()
         }
         assertTrue(history.records.isEmpty())
+    }
+
+    // ---------- two-phase emission (fast first paint) ----------
+
+    @Test
+    fun `analysis shows before handlers resolve`() = runTest(dispatcher) {
+        // Handler resolution suspended forever: phase 1 must still emit.
+        val neverResolving = object : HandlerResolver by resolver {
+            override suspend fun resolve(uri: Uri): List<HandlerApp> = kotlinx.coroutines.CompletableDeferred<List<HandlerApp>>().await()
+        }
+        val vm = InspectViewModel(neverResolving, actions, history, settingsRepo, role, handlerPrefs, dangerOverrides, demoRepo)
+        vm.submitText("https://fast-paint.example/a")
+        dispatcher.scheduler.advanceUntilIdle()
+        val state = vm.uiState.value as InspectUiState.Inspect
+        assertEquals("https://fast-paint.example/a", state.url)
+        assertTrue(state.handlers.isEmpty())
+        assertTrue(state.handlersLoading)
+        // The analysis (verdict + cleanup) is already on screen.
+        assertNotNull(state.verdict)
+        assertTrue(state.cleanup.url.isNotEmpty())
+    }
+
+    @Test
+    fun `handlers and allApps fill in phase 2`() = runTest(dispatcher) {
+        val vm = vm()
+        vm.submitText("https://a.com/p")
+        dispatcher.scheduler.advanceUntilIdle()
+        val state = vm.uiState.value as InspectUiState.Inspect
+        assertFalse(state.handlersLoading)
+        // Ranked handlers + pseudo (copy/share) entries present.
+        assertTrue(state.handlers.any { it.packageName == "com.android.chrome" })
+        assertTrue(state.handlers.any { it.packageName == PseudoHandler.COPY })
+        assertEquals(resolver.allAppsResult.size, state.allApps.size)
+    }
+
+    // ---------- auto-close ----------
+
+    @Test
+    fun `successful open requests activity close`() = runTest(dispatcher) {
+        val vm = vm()
+        vm.submitText("https://normal.com/a")
+        dispatcher.scheduler.advanceUntilIdle()
+        assertEquals(0, vm.closeRequests.value)
+        vm.openWith(chrome)
+        dispatcher.scheduler.advanceUntilIdle()
+        assertEquals(1, vm.closeRequests.value)
+        // History write landed BEFORE the close signal.
+        assertTrue(history.records.any { it.third == HistoryAction.OPENED_WITH })
+    }
+
+    @Test
+    fun `auto-close disabled in settings keeps the app open`() = runTest(dispatcher) {
+        settingsRepo.settings.value = settingsRepo.settings.value.copy(autoCloseOnOpen = false)
+        val vm = vm()
+        vm.submitText("https://normal.com/a")
+        dispatcher.scheduler.advanceUntilIdle()
+        vm.openWith(chrome)
+        dispatcher.scheduler.advanceUntilIdle()
+        assertEquals(0, vm.closeRequests.value)
+        // The launch + history write still happened.
+        assertTrue(actions.opened.isNotEmpty())
+        assertTrue(history.records.any { it.third == HistoryAction.OPENED_WITH })
+    }
+
+    @Test
+    fun `clearAndClose closes regardless of the auto-close setting`() = runTest(dispatcher) {
+        settingsRepo.settings.value = settingsRepo.settings.value.copy(autoCloseOnOpen = false)
+        val vm = vm()
+        vm.submitText("https://normal.com/a")
+        dispatcher.scheduler.advanceUntilIdle()
+        vm.clearAndClose()
+        dispatcher.scheduler.advanceUntilIdle()
+        assertEquals(1, vm.closeRequests.value)
+    }
+
+    // ---------- clear-on-focus-loss (auto-close off) ----------
+
+    @Test
+    fun `opened link is cleared when app backgrounds with auto-close off`() = runTest(dispatcher) {
+        settingsRepo.settings.value = settingsRepo.settings.value.copy(autoCloseOnOpen = false)
+        val vm = vm()
+        vm.submitText("https://normal.com/a")
+        dispatcher.scheduler.advanceUntilIdle()
+        vm.openWith(chrome)
+        dispatcher.scheduler.advanceUntilIdle()
+        // Still inspecting right after the launch (clear happens on pause,
+        // not instantly — no visible flash behind the launch animation).
+        assertTrue(vm.uiState.value is InspectUiState.Inspect)
+        vm.onAppBackground()
+        assertTrue(vm.uiState.value is InspectUiState.Manual)
+    }
+
+    @Test
+    fun `inspected but not opened link survives backgrounding`() = runTest(dispatcher) {
+        val vm = vm()
+        vm.submitText("https://normal.com/a")
+        dispatcher.scheduler.advanceUntilIdle()
+        vm.onAppBackground()
+        // No launch happened: the analysis stays.
+        assertTrue(vm.uiState.value is InspectUiState.Inspect)
+    }
+
+    @Test
+    fun `opened link NOT saved to history survives backgrounding`() = runTest(dispatcher) {
+        settingsRepo.settings.value = settingsRepo.settings.value.copy(autoCloseOnOpen = false)
+        // Case 1: history recording fully off.
+        settingsRepo.settings.value = settingsRepo.settings.value.copy(recordHistory = false)
+        var vm = vm()
+        vm.submitText("https://normal.com/a")
+        dispatcher.scheduler.advanceUntilIdle()
+        vm.openWith(chrome)
+        dispatcher.scheduler.advanceUntilIdle()
+        vm.onAppBackground()
+        assertTrue(vm.uiState.value is InspectUiState.Inspect)
+
+        // Case 2: this exact link opted out of history.
+        settingsRepo.settings.value = settingsRepo.settings.value.copy(recordHistory = true)
+        vm = vm()
+        vm.submitText("https://example.com/private")
+        dispatcher.scheduler.advanceUntilIdle()
+        vm.toggleHistoryExcluded()
+        dispatcher.scheduler.advanceUntilIdle()
+        vm.openWith(chrome)
+        dispatcher.scheduler.advanceUntilIdle()
+        vm.onAppBackground()
+        // Excluded → not recoverable in History → stays on screen.
+        assertTrue(vm.uiState.value is InspectUiState.Inspect)
+    }
+
+    @Test
+    fun `failed open does not close`() = runTest(dispatcher) {
+        actions.failOpens = true
+        val vm = vm()
+        vm.submitText("https://normal.com/a")
+        dispatcher.scheduler.advanceUntilIdle()
+        vm.openWith(chrome)
+        dispatcher.scheduler.advanceUntilIdle()
+        assertEquals(0, vm.closeRequests.value)
+        assertTrue(history.records.none { it.third == HistoryAction.OPENED_WITH })
+    }
+
+    @Test
+    fun `clearAndClose resets to Manual and requests close`() = runTest(dispatcher) {
+        val vm = vm()
+        vm.submitText("https://normal.com/a")
+        dispatcher.scheduler.advanceUntilIdle()
+        vm.clearAndClose()
+        dispatcher.scheduler.advanceUntilIdle()
+        assertTrue(vm.uiState.value is InspectUiState.Manual)
+        assertEquals(1, vm.closeRequests.value)
     }
 }
