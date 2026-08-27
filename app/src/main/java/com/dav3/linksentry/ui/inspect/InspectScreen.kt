@@ -1,5 +1,8 @@
 package com.dav3.linksentry.ui.inspect
 
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
@@ -11,8 +14,16 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleResumeEffect
+import kotlinx.coroutines.flow.drop
+
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
+}
 
 @Composable
 fun InspectScreen(
@@ -28,6 +39,21 @@ fun InspectScreen(
 ) {
     val state by viewModel.uiState.collectAsState()
     val snackbar = remember { SnackbarHostState() }
+    val context = LocalContext.current
+
+    // Auto-close: a handler was successfully launched (and its history/pref
+    // writes landed) or the user hit Clear & close — close so LinkSentry
+    // doesn't linger behind the opened app. finishAndRemoveTask() (not plain
+    // finish()) also drops the recents card — plain finish() kept a dead
+    // LinkSentry entry in "swipe up and hold". drop(1) skips the initial 0.
+    LaunchedEffect(context) {
+        viewModel.closeRequests.drop(1).collect {
+            context.findActivity()?.let { activity ->
+                if (activity.isFinishing) return@let
+                activity.finishAndRemoveTask()
+            }
+        }
+    }
 
     // Replay request from Settings (NavHost flag).
     LaunchedEffect(replayTour) {
@@ -56,10 +82,12 @@ fun InspectScreen(
     // every resume: apps get installed/updated and link-handling defaults
     // get flipped while LinkSentry is in the background — the "Open with"
     // list must reflect the device's current state, not submit-time.
+    // onPause: with auto-close off, an OPENED link is dropped here so the
+    // app never reopens showing the last link.
     LifecycleResumeEffect(Unit) {
         viewModel.refreshRole()
         viewModel.refreshHandlers()
-        onPauseOrDispose { }
+        onPauseOrDispose { viewModel.onAppBackground() }
     }
 
     Scaffold(
@@ -85,6 +113,7 @@ fun InspectScreen(
             },
             onOpenBrowserSettings = viewModel::openBrowserSettings,
             onInspectNew = onInspectNew,
+            onClearAndClose = viewModel::clearAndClose,
             handlerLayout = handlerLayout,
             onToggleKeepParam = viewModel::toggleKeepParam,
             onToggleKeepCredentials = viewModel::toggleKeepCredentials,

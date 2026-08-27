@@ -171,6 +171,8 @@ class HistoryAndSettingsTest {
 
         override suspend fun setOpenCleaned(enabled: Boolean) {}
 
+        override suspend fun setAutoCloseOnOpen(enabled: Boolean) {}
+
         override suspend fun addCustomTrackingParam(name: String) {}
 
         override suspend fun removeCustomTrackingParam(name: String) {}
