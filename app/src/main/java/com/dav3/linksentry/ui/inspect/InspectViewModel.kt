@@ -564,7 +564,10 @@ class InspectViewModel @Inject constructor(
         if (state.tour != null) return // tour is sandboxed; never resandbox data
         viewModelScope.launch {
             val ranked = rankHandlers(state)
-            val apps = resolver.allLaunchableApps()
+            // Revalidate the all-apps cache (new installs/uninstalls pop
+            // in) and use the fresh result for this screen.
+            resolver.refreshAllAppsCache()
+            val apps = resolver.allAppsCache.value
             val current = _uiState.value
             if (current is InspectUiState.Inspect && current.url == state.url) {
                 _uiState.value = current.copy(

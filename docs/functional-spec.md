@@ -30,7 +30,9 @@ User taps an http/https link anywhere in the OS → LinkSentry opens
 phases: the analysis (host headline, full raw URL, verdict card, signal
 list, URL breakdown) appears immediately — pure local computation — while
 the handler list shows a brief "Finding apps…" indicator until
-PackageManager resolution lands. If the link arrives while the app is
+PackageManager resolution lands (the all-apps list is preloaded at
+process start and cached, so the indicator normally appears only on a
+cold first inspect). If the link arrives while the app is
 open, `onNewIntent` re-runs inspection.
 
 Opening the link through any handler **closes LinkSentry automatically**

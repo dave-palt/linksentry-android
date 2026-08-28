@@ -2,6 +2,9 @@ package com.dav3.linksentry.ui.inspect
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -14,6 +17,7 @@ import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
@@ -71,6 +75,7 @@ import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -314,7 +319,33 @@ private fun InspectedContent(
         else -> null
     }
 
+    // Search-focus tracking: when the user taps the "search all apps"
+    // field, the list slides so the INPUT itself lands at the very top of
+    // the viewport (right under the status bar) — everything below it
+    // (first rows + the whole scrollable list) stays visible above the
+    // keyboard. Measured from live layout instead of item indexes, so it
+    // holds regardless of section heights above it.
+    val appSearchInteraction = remember { MutableInteractionSource() }
+    val appSearchFocused by appSearchInteraction.collectIsFocusedAsState()
+    val density = LocalDensity.current
+    var searchFieldTopInRoot by remember { mutableStateOf(Float.MAX_VALUE) }
+    val imeVisible = WindowInsets.ime.getBottom(density) > 0
+    LaunchedEffect(appSearchFocused, imeVisible) {
+        if (appSearchFocused && imeVisible) {
+            val targetTop = with(density) { statusBarInset.toPx() + 8.dp.toPx() }
+            val delta = searchFieldTopInRoot - targetTop
+            if (delta > 0f) {
+                runCatching { listState.animateScrollBy(delta) }
+            }
+        }
+    }
+
     Box(modifier = modifier.fillMaxWidth()) {
+        // Keyboard-aware bottom padding: with edge-to-edge + adjustResize the
+        // IME insets are NOT consumed anywhere (the Scaffolds zero their
+        // window insets), so the keyboard would otherwise draw over the last
+        // rows. Padding the list keeps EVERY row scrollable above the IME.
+        val imeInset = WindowInsets.ime.asPaddingValues().calculateBottomPadding()
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxWidth(),
@@ -322,7 +353,7 @@ private fun InspectedContent(
                 start = 20.dp,
                 top = statusBarInset + 8.dp,
                 end = 20.dp,
-                bottom = 96.dp, // room for the FAB
+                bottom = 96.dp + imeInset, // FAB room + keyboard
             ),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
@@ -454,7 +485,10 @@ private fun InspectedContent(
                                 onValueChange = onAppSearchChange,
                                 placeholder = { Text("Can't see an app? Search all apps") },
                                 singleLine = true,
-                                modifier = Modifier.fillMaxWidth(),
+                                interactionSource = appSearchInteraction,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .onGloballyPositioned { searchFieldTopInRoot = it.boundsInRoot().top },
                             )
                         }
                         val searching = state.appSearch.isNotBlank()
