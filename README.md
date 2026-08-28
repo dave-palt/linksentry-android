@@ -32,6 +32,10 @@ leaking a URL, or phoning home. This is enforced in CI.
 - **Live handler list** — the "Open with" list is re-resolved every time the
   screen resumes, so newly installed apps or changed link-handling defaults
   appear without re-submitting the link.
+- **Preloaded all-apps cache** — the launchable-apps list behind the
+  "search all apps" fallback is loaded once at process start and cached in
+  memory; every resume revalidates it in the background (new installs pop
+  in) instead of re-querying PackageManager per link.
 - **Instant inspect + auto-close** — the risk analysis paints immediately
   (apps fill in a beat later), and opening a link through any handler closes
   LinkSentry automatically; a danger-red "Clear & close" button drops the

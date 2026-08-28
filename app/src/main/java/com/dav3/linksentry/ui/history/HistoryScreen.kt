@@ -528,9 +528,9 @@ private fun relativeTime(ts: Long): String {
     val m = diff / 60_000
     return when {
         m < 1 -> "just now"
-        m < 60 -> "${'$'}{m}m ago"
-        m < 60 * 24 -> "${'$'}{m / 60}h ago"
-        m < 60 * 24 * 30 -> "${'$'}{m / (60 * 24)}d ago"
+        m < 60 -> "${m}m ago"
+        m < 60 * 24 -> "${m / 60}h ago"
+        m < 60 * 24 * 30 -> "${m / (60 * 24)}d ago"
         else -> java.text.SimpleDateFormat("d MMM", java.util.Locale.ROOT).format(java.util.Date(ts))
     }
 }

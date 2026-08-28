@@ -17,6 +17,7 @@ import com.dav3.linksentry.domain.system.LinkActions
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.resetMain
@@ -63,11 +64,22 @@ class InspectViewModelTest {
     private class FakeResolver(var apps: List<HandlerApp> = emptyList()) : HandlerResolver {
         var lastUri: Uri? = null
         var allAppsResult: List<HandlerApp> = emptyList()
+        private val cache = MutableStateFlow(emptyList<HandlerApp>())
+        override val allAppsCache: StateFlow<List<HandlerApp>> = cache
+        override suspend fun warmAllAppsCache() {
+            if (cache.value.isEmpty()) cache.value = allAppsResult
+        }
+        override suspend fun refreshAllAppsCache() {
+            cache.value = allAppsResult
+        }
         override suspend fun resolve(uri: Uri): List<HandlerApp> {
             lastUri = uri
             return apps
         }
-        override suspend fun allLaunchableApps(): List<HandlerApp> = allAppsResult
+        override suspend fun allLaunchableApps(): List<HandlerApp> {
+            warmAllAppsCache()
+            return cache.value
+        }
     }
 
     private class FakeLinkActions : LinkActions {
