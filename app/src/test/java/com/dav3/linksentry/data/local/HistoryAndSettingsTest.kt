@@ -163,6 +163,10 @@ class HistoryAndSettingsTest {
             s = s.copy(retentionDays = days)
         }
 
+        override suspend fun setLayaVerdictEnabled(enabled: Boolean) {
+            s = s.copy(layaVerdictEnabled = enabled)
+        }
+
         override suspend fun setTheme(mode: ThemeMode) {
             s = s.copy(theme = mode)
         }

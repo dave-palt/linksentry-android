@@ -185,4 +185,6 @@ data class AppSettings(
     val handlerLayout: HandlerLayout = HandlerLayout.LIST,
     /** Exact URLs the user opted out of history recording for. */
     val historyExclusions: Set<String> = emptySet(),
+    /** On-device Laya malicious-content verdicts (opt-in feature). */
+    val layaVerdictEnabled: Boolean = true,
 )

@@ -24,3 +24,4 @@ release.jks
 .worktrees
 # Hermes plans are workspace-local
 /.hermes
+.validation/

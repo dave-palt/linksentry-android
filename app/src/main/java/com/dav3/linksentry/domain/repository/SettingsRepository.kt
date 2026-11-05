@@ -30,4 +30,7 @@ interface SettingsRepository {
 
     /** Re-enable history recording for one exact URL. */
     suspend fun unexcludeUrlFromHistory(url: String)
+
+    /** Toggle the on-device Laya malicious-content verdict feature. */
+    suspend fun setLayaVerdictEnabled(enabled: Boolean)
 }

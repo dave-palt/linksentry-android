@@ -14,6 +14,7 @@ import com.dav3.linksentry.domain.repository.SettingsRepository
 import com.dav3.linksentry.domain.system.BrowserRoleChecker
 import com.dav3.linksentry.domain.system.HandlerResolver
 import com.dav3.linksentry.domain.system.LinkActions
+import com.dav3.linksentry.ui.preview.FakeLayaRuntime
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -137,6 +138,10 @@ class InspectViewModelTest {
             settings.value = settings.value.copy(autoCloseOnOpen = enabled)
         }
 
+        override suspend fun setLayaVerdictEnabled(enabled: Boolean) {
+            settings.value = settings.value.copy(layaVerdictEnabled = enabled)
+        }
+
         private val customTracking = mutableSetOf<String>()
 
         override suspend fun addCustomTrackingParam(name: String) {
@@ -240,7 +245,7 @@ class InspectViewModelTest {
     }
 
     /** Fresh VM with an unseen tour flag: the guided tour auto-starts. */
-    private fun tourVm() = InspectViewModel(resolver, actions, history, settingsRepo, role, handlerPrefs, dangerOverrides, FakeDemoRepo())
+    private fun tourVm() = InspectViewModel(resolver, actions, history, settingsRepo, role, handlerPrefs, dangerOverrides, FakeDemoRepo(), FakeLayaRuntime())
 
     @After
     fun tearDown() {
@@ -252,7 +257,7 @@ class InspectViewModelTest {
 
     private lateinit var demoRepo: FakeDemoRepo
 
-    private fun vm() = InspectViewModel(resolver, actions, history, settingsRepo, role, handlerPrefs, dangerOverrides, demoRepo)
+    private fun vm() = InspectViewModel(resolver, actions, history, settingsRepo, role, handlerPrefs, dangerOverrides, demoRepo, FakeLayaRuntime())
 
     @Test
     fun `demo links are never recorded to history`() = runTest(dispatcher) {
@@ -896,7 +901,7 @@ class InspectViewModelTest {
         val neverResolving = object : HandlerResolver by resolver {
             override suspend fun resolve(uri: Uri): List<HandlerApp> = kotlinx.coroutines.CompletableDeferred<List<HandlerApp>>().await()
         }
-        val vm = InspectViewModel(neverResolving, actions, history, settingsRepo, role, handlerPrefs, dangerOverrides, demoRepo)
+        val vm = InspectViewModel(neverResolving, actions, history, settingsRepo, role, handlerPrefs, dangerOverrides, demoRepo, FakeLayaRuntime())
         vm.submitText("https://fast-paint.example/a")
         dispatcher.scheduler.advanceUntilIdle()
         val state = vm.uiState.value as InspectUiState.Inspect

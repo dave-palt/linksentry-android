@@ -26,13 +26,18 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
 
-      - name: Zero permissions in source manifest
+      - name: Zero requested permissions in source manifest
         run: |
-          if grep -q "uses-permission" app/src/main/AndroidManifest.xml; then
-            echo "::error::Permission declared in app/src/main/AndroidManifest.xml — LinkSentry must declare none"
+          # tools:node="remove" entries STRIP library-declared permissions at
+          # merge time (they keep LiteRT's inert FOREGROUND_SERVICE entries out
+          # of the merged manifest) — they request nothing and are allowed.
+          REQUESTED=$(grep '<uses-permission' app/src/main/AndroidManifest.xml | grep -v 'tools:node="remove"' || true)
+          if [ -n "$REQUESTED" ]; then
+            echo "::error::Permission requested in app/src/main/AndroidManifest.xml — LinkSentry must declare none:"
+            echo "$REQUESTED"
             exit 1
           fi
-          echo "OK: source manifest declares zero permissions."
+          echo "OK: source manifest requests zero permissions."
 
       - name: No INTERNET in merged manifest
         run: |
@@ -51,7 +56,19 @@ jobs:
             exit 1
           fi
           echo "OK: $MANIFEST has no INTERNET permission."
-          echo "Uses-permission entries in merged manifest: $(grep -c 'uses-permission' "$MANIFEST" || true)"
+          # The product promise: NO platform permission requests in the merged
+          # manifest. Anything a dependency declares must be stripped with
+          # tools:node="remove". An app-namespaced custom permission (e.g. the
+          # debug-only DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION androidx
+          # generates for runtime receivers) is not a platform capability and
+          # is allowed.
+          PLATFORM_PERMS=$(grep -o 'uses-permission android:name="android\.permission\.[^"]*"' "$MANIFEST" | sort -u)
+          if [ -n "$PLATFORM_PERMS" ]; then
+            echo "::error::Merged manifest requests platform permissions — strip them with tools:node=\"remove\":"
+            echo "$PLATFORM_PERMS"
+            exit 1
+          fi
+          echo "OK: merged manifest requests ZERO platform permissions."
 
       - name: No network-capable code
         run: |
@@ -121,8 +138,20 @@ jobs:
           key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle.kts', 'gradle/libs.versions.toml') }}
           restore-keys: gradle-${{ runner.os }}-
 
+      # The 32 MB Laya tokenizer.json is not committed; the parity gate skips
+      # without it. CI fetches the pinned release file and verifies its hash
+      # FIRST — a failed or tampered download fails the build, never skips.
+      - name: Fetch pinned Laya tokenizer for the parity gate
+        run: |
+          mkdir -p .validation
+          curl -fsSL -o .validation/tokenizer.json \
+            https://huggingface.co/litert-community/Laya-Multilingual-LiteRT/resolve/main/tokenizer.json
+          echo "609d8f4c067cd3950f88594c5a802616cea245823836ef5848ee4fc40aab5b6f  .validation/tokenizer.json" | sha256sum --check --status
+          echo "OK: pinned tokenizer verified."
+
       # Unit tests + screenshot verification (Roborazzi compares against
-      # committed baselines in app/src/test/resources/roborazzi)
+      # committed baselines in app/src/test/resources/roborazzi).
+      # laya.validationDir defaults to <repo root>/.validation (fetched above).
       - name: Unit + screenshot tests
         run: ./gradlew testDebugUnitTest --no-daemon --no-configuration-cache
 

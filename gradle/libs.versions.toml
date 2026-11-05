@@ -17,6 +17,7 @@ roborazzi = "1.70.0"
 composablePreviewScanner = "0.9.1"
 timber = "5.0.1"
 coroutines = "1.10.2"
+litert = "2.3.0"
 turbine = "1.2.1"
 androidxTestCore = "1.7.0"
 androidxTestExtJunit = "1.3.0"
@@ -57,6 +58,13 @@ androidx-room-compiler = { group = "androidx.room", name = "room-compiler", vers
 
 # Logging
 timber = { group = "com.jakewharton.timber", name = "timber", version.ref = "timber" }
+
+# LiteRT (on-device Laya verdict; optional user-imported model).
+# Pure inference runtime — no network capability. Its manifest-declared
+# FOREGROUND_SERVICE permissions are stripped in AndroidManifest.xml
+# (tools:node="remove") so the app stays zero-permission.
+litert = { group = "com.google.ai.edge.litert", name = "litert", version.ref = "litert" }
+litert-gpu = { group = "com.google.ai.edge.litert", name = "litert-gpu", version.ref = "litert" }
 
 # JVM unit testing
 junit = { group = "junit", name = "junit", version = "4.13.2" }

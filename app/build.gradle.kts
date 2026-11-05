@@ -103,6 +103,15 @@ android {
     testOptions {
         unitTests {
             isIncludeAndroidResources = true
+            all { test ->
+                // Laya parity gate: tokenizer.json is not committed; tests
+                // read it from this dir (default: <repo root>/.validation,
+                // which CI populates with the hash-checked pinned file).
+                val validationDir =
+                    findProperty("laya.validationDir")
+                        ?: rootProject.file(".validation").absolutePath
+                test.systemProperty("laya.validationDir", validationDir.toString())
+            }
         }
     }
 }
@@ -165,6 +174,17 @@ dependencies {
 
     // Logging
     implementation(libs.timber)
+
+    // LiteRT — on-device runtime for the OPTIONAL user-imported Laya verdict
+    // model (disabled and inert until model files are imported in Settings).
+    // Inference-only: no network capability of its own. The FOREGROUND_SERVICE
+    // permissions its AAR manifests declare are removed at merge time (see
+    // AndroidManifest.xml) — the app still merges ZERO permissions.
+    // 2.3.0 pins unique manifest namespaces (AGP 9 requirement, litert issue
+    // #8474); litert-gpu carries the GPU accelerator that moved out of the
+    // core artifact in 2.3.0.
+    implementation(libs.litert)
+    implementation(libs.litert.gpu)
 
     // NOTE: deliberately absent — LinkSentry must never gain network capability:
     //   no INTERNET permission, no Retrofit/OkHttp/Coil/browser/WorkManager.

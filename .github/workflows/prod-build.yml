@@ -33,13 +33,17 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
 
-      - name: Zero permissions in source manifest
+      - name: Zero requested permissions in source manifest
         run: |
-          if grep -q "uses-permission" app/src/main/AndroidManifest.xml; then
-            echo "::error::Permission declared in app/src/main/AndroidManifest.xml — LinkSentry must declare none"
+          # tools:node="remove" entries STRIP library-declared permissions at
+          # merge time — they request nothing and are allowed.
+          REQUESTED=$(grep '<uses-permission' app/src/main/AndroidManifest.xml | grep -v 'tools:node="remove"' || true)
+          if [ -n "$REQUESTED" ]; then
+            echo "::error::Permission requested in app/src/main/AndroidManifest.xml — LinkSentry must declare none:"
+            echo "$REQUESTED"
             exit 1
           fi
-          echo "OK: source manifest declares zero permissions."
+          echo "OK: source manifest requests zero permissions."
 
       - name: No INTERNET in merged manifest
         run: |
@@ -58,7 +62,13 @@ jobs:
             exit 1
           fi
           echo "OK: $MANIFEST has no INTERNET permission."
-          echo "Uses-permission entries in merged manifest: $(grep -c 'uses-permission' "$MANIFEST" || true)"
+          PLATFORM_PERMS=$(grep -o 'uses-permission android:name="android\.permission\.[^"]*"' "$MANIFEST" | sort -u)
+          if [ -n "$PLATFORM_PERMS" ]; then
+            echo "::error::Merged release manifest requests platform permissions — strip them with tools:node=\"remove\":"
+            echo "$PLATFORM_PERMS"
+            exit 1
+          fi
+          echo "OK: merged release manifest requests ZERO platform permissions."
 
       - name: No network-capable code
         run: |
