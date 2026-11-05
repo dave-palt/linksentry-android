@@ -24,6 +24,11 @@ leaking a URL, or phoning home. This is enforced in CI.
   punycode/homograph hosts, URL shorteners, tracking parameters
   (`utm_*`, `fbclid`, …), dangerous schemes (`javascript:`, `data:`, `intent:`,
   `file:`), and more. Absence of signals is never presented as "safe".
+- **AI link verdict (optional, on-device):** a Laya decision model can judge
+  inspected links for phishing / scam / malware patterns in one forward pass —
+  entirely on-device (LiteRT), opt-in, and only with a model bundle you import
+  yourself (LinkSentry cannot download anything). Every imported file is
+  verified against the pinned release's SHA-256. See `docs/laya-verdict.md`.
 - **Open-with chooser** — the real list of installed apps that can handle the
   link, browsers flagged; launches use explicit intents only.
 - **Search all apps** — when an app doesn't declare support for a link (or

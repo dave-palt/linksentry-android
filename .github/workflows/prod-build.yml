@@ -33,13 +33,24 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
 
-      - name: Zero permissions in source manifest
+      - name: Zero requested permissions in source manifest
         run: |
-          if grep -q "uses-permission" app/src/main/AndroidManifest.xml; then
-            echo "::error::Permission declared in app/src/main/AndroidManifest.xml — LinkSentry must declare none"
-            exit 1
-          fi
-          echo "OK: source manifest declares zero permissions."
+          # Element-level check (entries are multi-line). tools:node="remove"
+          # entries strip library permissions at merge time and request nothing.
+          python3 - <<'PYEOF'
+          import re, sys
+          src = open("app/src/main/AndroidManifest.xml", encoding="utf-8").read()
+          requested = [
+              m.group(0) for m in re.finditer(r"<uses-permission\b[^>]*>", src, re.S)
+              if 'tools:node="remove"' not in m.group(0)
+          ]
+          if requested:
+              print("::error::Permission requested in app/src/main/AndroidManifest.xml — LinkSentry must declare none:")
+              for entry in requested:
+                  print(entry)
+              sys.exit(1)
+          print("OK: source manifest requests zero permissions.")
+          PYEOF
 
       - name: No INTERNET in merged manifest
         run: |
@@ -58,7 +69,13 @@ jobs:
             exit 1
           fi
           echo "OK: $MANIFEST has no INTERNET permission."
-          echo "Uses-permission entries in merged manifest: $(grep -c 'uses-permission' "$MANIFEST" || true)"
+          PLATFORM_PERMS=$(grep -o 'uses-permission android:name="android\.permission\.[^"]*"' "$MANIFEST" | sort -u)
+          if [ -n "$PLATFORM_PERMS" ]; then
+            echo "::error::Merged release manifest requests platform permissions — strip them with tools:node=\"remove\":"
+            echo "$PLATFORM_PERMS"
+            exit 1
+          fi
+          echo "OK: merged release manifest requests ZERO platform permissions."
 
       - name: No network-capable code
         run: |

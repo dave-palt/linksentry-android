@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.OpenInNew
+import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Warning
@@ -41,6 +42,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
@@ -83,6 +85,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.dav3.linksentry.domain.analyze.UrlAnalyzer
+import com.dav3.linksentry.domain.laya.LinkVerdict
 import com.dav3.linksentry.domain.model.CleanupCategory
 import com.dav3.linksentry.domain.model.DemoLinks
 import com.dav3.linksentry.domain.model.DemoTour
@@ -445,6 +448,9 @@ private fun InspectedContent(
                         }
                     }
                 }
+            }
+            state.layaVerdict?.let { verdictUi ->
+                item(key = "laya") { LayaVerdictCard(verdictUi) }
             }
             if (!state.dangerGate) {
                 item(key = "apps") {
@@ -1224,6 +1230,114 @@ private fun VerdictCard(state: InspectUiState.Inspect) {
                 Text(style.body, style = MaterialTheme.typography.bodySmall, color = style.fg)
             }
         }
+    }
+}
+
+@Composable
+private fun LayaVerdictCard(ui: LayaVerdictUi) {
+    when (ui) {
+        LayaVerdictUi.Loading -> Surface(
+            color = Color(0x142563EB),
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                Spacer(Modifier.width(12.dp))
+                Column {
+                    Text(
+                        "On-device AI is judging this link…",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Text(
+                        "Runs fully on this phone — the link is never fetched or sent anywhere.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+        is LayaVerdictUi.Done -> {
+            val v = ui.verdict
+            val style = when (v.overall) {
+                LinkVerdict.Overall.LIKELY_MALICIOUS -> VerdictStyle(
+                    Color(0x33DC2626),
+                    Color(0xFFDC2626),
+                    title = "AI check: this link looks malicious",
+                    body = "The on-device model recognizes strong scam, phishing, or malware patterns here.",
+                )
+                LinkVerdict.Overall.SUSPICIOUS -> VerdictStyle(
+                    Color(0x33D97706),
+                    Color(0xFFD97706),
+                    title = "AI check: this link looks suspicious",
+                    body = "The on-device model sees red flags worth taking seriously.",
+                )
+                LinkVerdict.Overall.APPEARS_BENIGN -> VerdictStyle(
+                    Color(0x3322C55E),
+                    Color(0xFF16A34A),
+                    title = "AI check: nothing malicious recognized",
+                    body = "This is NOT a safety guarantee — the model only judged how the link looks.",
+                )
+            }
+            Surface(color = style.bg, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            Icons.Filled.Psychology,
+                            contentDescription = null,
+                            tint = style.fg,
+                            modifier = Modifier.size(24.dp),
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        Column {
+                            Text(style.title, style = MaterialTheme.typography.titleSmall, color = style.fg)
+                            Text(style.body, style = MaterialTheme.typography.bodySmall, color = style.fg)
+                        }
+                    }
+                    LayaProbabilityRow("Phishing", v.phishing.probability, style.fg)
+                    LayaProbabilityRow("Scam / fraud", v.scam.probability, style.fg)
+                    LayaProbabilityRow("Malware", v.malware.probability, style.fg)
+                    LayaProbabilityRow("Overall suspicion", v.suspicion / 3.0, style.fg, detail = suspicionLabel(v.suspicion))
+                    Text(
+                        "Judged from the URL and local signals only — the page itself is never loaded.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = style.fg.copy(alpha = 0.75f),
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun suspicionLabel(expected: Double): String {
+    val level = expected.roundToInt().coerceIn(0, 3)
+    return when (level) {
+        0 -> "genuine everyday site"
+        1 -> "slightly unusual but benign"
+        2 -> "suspicious"
+        else -> "almost certainly malicious"
+    }
+}
+
+@Composable
+private fun LayaProbabilityRow(label: String, probability: Double, tint: Color, detail: String? = null) {
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            if (detail == null) label else "$label — $detail",
+            style = MaterialTheme.typography.bodySmall,
+            color = tint,
+            modifier = Modifier.weight(1f),
+        )
+        Text(
+            "${(probability * 100).roundToInt()}%",
+            style = MaterialTheme.typography.bodySmall,
+            color = tint,
+            fontWeight = FontWeight.SemiBold,
+        )
     }
 }
 

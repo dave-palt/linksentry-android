@@ -4,6 +4,9 @@ import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.dav3.linksentry.domain.analyze.UrlAnalyzer
+import com.dav3.linksentry.domain.laya.LayaRuntime
+import com.dav3.linksentry.domain.laya.LayaRuntimeState
+import com.dav3.linksentry.domain.laya.LinkVerdict
 import com.dav3.linksentry.domain.model.DangerOverride
 import com.dav3.linksentry.domain.model.DemoLinks
 import com.dav3.linksentry.domain.model.DemoTour
@@ -31,6 +34,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
 
 /** One of three UI modes for the Inspect tab. */
@@ -90,6 +94,8 @@ sealed interface InspectUiState {
         /** True while the handler list / all-apps fallback is still
          *  resolving (analysis already on screen — see submitText). */
         val handlersLoading: Boolean = false,
+        /** Optional on-device Laya verdict; null = feature off/absent → card hidden. */
+        val layaVerdict: LayaVerdictUi? = null,
     ) : InspectUiState
 
     /** Guided-tour progress; [index] is into [DemoTour.steps]. */
@@ -103,6 +109,15 @@ sealed interface InspectUiState {
     data class Invalid(val input: String) : InspectUiState
 }
 
+/** UI shape of the optional on-device Laya verdict for one inspected link. */
+sealed interface LayaVerdictUi {
+    /** Model is judging (engine load + 4 graph runs). */
+    data object Loading : LayaVerdictUi
+
+    /** Calibrated verdict ready. */
+    data class Done(val verdict: LinkVerdict) : LayaVerdictUi
+}
+
 @HiltViewModel
 class InspectViewModel @Inject constructor(
     private val resolver: HandlerResolver,
@@ -113,6 +128,7 @@ class InspectViewModel @Inject constructor(
     private val handlerPrefs: HandlerPrefsRepository,
     private val dangerOverrides: DangerOverridesRepository,
     private val demoRepo: com.dav3.linksentry.domain.repository.DemoRepository,
+    private val laya: LayaRuntime,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<InspectUiState>(InspectUiState.Manual())
@@ -289,7 +305,55 @@ class InspectViewModel @Inject constructor(
                     appSearchResults = filterAppsForSearch(handlers, allApps, current.appSearch),
                 )
             }
+
+            // PHASE 3 — optional on-device Laya malicious-content verdict.
+            // Fully local (no network), opt-in; the card fills in a beat
+            // after the analysis. Tour states never get here: updateLayaUi
+            // refuses them (sandbox stays fake).
+            launchLayaVerdict(analysis.facts.raw, analysis.facts, analysis.verdict.signals)
         }
+    }
+
+    /**
+     * Runs the Laya verdict for [url] when the feature is enabled, updating
+     * the Inspect state in place. Every UI write re-checks that the user is
+     * still looking at this exact URL (stale-result guard).
+     */
+    private fun launchLayaVerdict(
+        url: String,
+        facts: UrlFacts,
+        signals: List<com.dav3.linksentry.domain.model.RiskSignal>,
+    ) {
+        viewModelScope.launch {
+            val enabled = settingsRepo.settings.first().layaVerdictEnabled
+            if (!enabled) return@launch
+            laya.ensureStarted(true)
+            if (laya.state.value !is LayaRuntimeState.Ready) {
+                // Cold engine load (tokenizer + graphs) can take seconds on
+                // the first link after import; wait, then give up quietly —
+                // the card only appears when there is something to show.
+                val reached = withTimeoutOrNull(LAYA_LOAD_TIMEOUT_MS) {
+                    laya.state.first { it !is LayaRuntimeState.Loading }
+                }
+                if (reached !is LayaRuntimeState.Ready) return@launch
+            }
+            updateLayaUi(url) { LayaVerdictUi.Loading }
+            val verdict = laya.judge(facts, signals) ?: return@launch
+            updateLayaUi(url) { LayaVerdictUi.Done(verdict) }
+        }
+    }
+
+    /** Applies a Laya UI update only when [url] is still on screen. */
+    private fun updateLayaUi(url: String, transform: () -> LayaVerdictUi) {
+        val current = _uiState.value
+        if (current is InspectUiState.Inspect && current.url == url && current.tour == null) {
+            _uiState.value = current.copy(layaVerdict = transform())
+        }
+    }
+
+    private companion object {
+        /** How long a link waits for a cold engine load before giving up quietly. */
+        const val LAYA_LOAD_TIMEOUT_MS = 20_000L
     }
 
     fun openWith(app: HandlerApp) {

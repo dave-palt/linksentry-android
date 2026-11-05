@@ -72,6 +72,8 @@ class FakeSettingsRepo(initial: AppSettings = AppSettings()) : SettingsRepositor
     override suspend fun excludeUrlFromHistory(url: String) = Unit
 
     override suspend fun unexcludeUrlFromHistory(url: String) = Unit
+
+    override suspend fun setLayaVerdictEnabled(enabled: Boolean) = Unit
 }
 
 class FakeRoleChecker(private val isDefault: Boolean = true) : BrowserRoleChecker {
@@ -88,9 +90,38 @@ object NoopLinkActions : LinkActions {
     override fun openDefaultAppsSettings() = Unit
 }
 
+class FakeLayaRuntime : com.dav3.linksentry.domain.laya.LayaRuntime {
+    override val state = kotlinx.coroutines.flow.MutableStateFlow(
+        com.dav3.linksentry.domain.laya.LayaRuntimeState.Unavailable,
+    )
+
+    override fun ensureStarted(enabled: Boolean) = Unit
+
+    override fun restart(enabled: Boolean) = Unit
+
+    override fun stop() = Unit
+
+    override suspend fun judge(
+        facts: com.dav3.linksentry.domain.model.UrlFacts,
+        signals: List<com.dav3.linksentry.domain.model.RiskSignal>,
+    ): com.dav3.linksentry.domain.laya.LinkVerdict? = null
+}
+
 fun previewHistoryViewModel(records: List<LinkRecord>): HistoryViewModel = HistoryViewModel(FakeHistoryRepo(records), NoopLinkActions, FakeDangerOverrides(), FakeDemoRepo())
 
-fun previewSettingsViewModel(settings: AppSettings): SettingsViewModel = SettingsViewModel(FakeSettingsRepo(settings), FakeRoleChecker(true), NoopLinkActions, FakeHandlerPrefs(), FakeDangerOverrides(), FakeDemoRepo())
+fun previewSettingsViewModel(
+    settings: AppSettings,
+    layaStore: com.dav3.linksentry.data.laya.LayaModelStore,
+): SettingsViewModel = SettingsViewModel(
+    FakeSettingsRepo(settings),
+    FakeRoleChecker(true),
+    NoopLinkActions,
+    FakeHandlerPrefs(),
+    FakeDangerOverrides(),
+    FakeDemoRepo(),
+    layaStore,
+    FakeLayaRuntime(),
+)
 
 class FakeDangerOverrides : com.dav3.linksentry.domain.repository.DangerOverridesRepository {
     override fun observeAll() = kotlinx.coroutines.flow.MutableStateFlow(

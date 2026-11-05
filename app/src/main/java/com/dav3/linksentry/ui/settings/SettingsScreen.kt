@@ -1,5 +1,7 @@
 package com.dav3.linksentry.ui.settings
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -42,6 +44,7 @@ import com.dav3.linksentry.domain.system.BrowserRoleChecker
 import com.dav3.linksentry.domain.system.LinkActions
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -54,15 +57,70 @@ class SettingsViewModel @Inject constructor(
     private val handlerPrefs: com.dav3.linksentry.domain.repository.HandlerPrefsRepository,
     private val dangerOverridesRepo: com.dav3.linksentry.domain.repository.DangerOverridesRepository,
     private val demoRepo: com.dav3.linksentry.domain.repository.DemoRepository,
+    private val layaStore: com.dav3.linksentry.data.laya.LayaModelStore,
+    private val layaRuntime: com.dav3.linksentry.domain.laya.LayaRuntime,
 ) : ViewModel() {
 
     /** First-open tip; null until the flag is read. */
     val demoTip = kotlinx.coroutines.flow.MutableStateFlow<Boolean?>(null)
 
+    /** Laya model install/import UI state. */
+    val layaUi = kotlinx.coroutines.flow.MutableStateFlow(LayaSettingsUi())
+
     init {
         viewModelScope.launch {
             demoTip.value = !demoRepo.isSeen(com.dav3.linksentry.domain.repository.DemoKey.SETTINGS)
         }
+        refreshLaya()
+    }
+
+    /** Re-reads the model bundle state from disk. */
+    fun refreshLaya(keepMessage: Boolean = true) {
+        val message = if (keepMessage) layaUi.value.message else null
+        layaUi.value = when (val status = layaStore.status()) {
+            is com.dav3.linksentry.data.laya.LayaModelStatus.Installed ->
+                LayaSettingsUi(install = LayaInstallUi.INSTALLED, totalBytes = status.totalBytes, message = message)
+            is com.dav3.linksentry.data.laya.LayaModelStatus.Corrupt ->
+                LayaSettingsUi(install = LayaInstallUi.CORRUPT, mismatched = status.mismatched, message = message)
+            com.dav3.linksentry.data.laya.LayaModelStatus.NotInstalled ->
+                LayaSettingsUi(install = LayaInstallUi.NOT_INSTALLED, message = message)
+        }
+    }
+
+    /** Toggles the verdict feature; stopping the engine frees its memory. */
+    fun setLayaEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            repository.setLayaVerdictEnabled(enabled)
+            if (!enabled) layaRuntime.stop()
+        }
+    }
+
+    /** Imports SAF-picked files; only a complete, hash-verified bundle lands. */
+    fun importLayaModel(uris: List<android.net.Uri>) {
+        if (uris.isEmpty()) return
+        viewModelScope.launch {
+            layaUi.value = layaUi.value.copy(busy = true, message = "Verifying and copying files…")
+            val result = layaStore.import(uris)
+            val enabled = repository.settings.first().layaVerdictEnabled
+            if (result.ok) {
+                layaRuntime.restart(enabled)
+                refreshLaya(keepMessage = false)
+                layaUi.value = layaUi.value.copy(
+                    busy = false,
+                    message = "Model installed. Verdicts appear on newly inspected links.",
+                )
+            } else {
+                refreshLaya(keepMessage = false)
+                layaUi.value = layaUi.value.copy(busy = false, message = result.message)
+            }
+        }
+    }
+
+    /** Deletes the imported bundle and stops the engine. */
+    fun deleteLayaModel() {
+        layaStore.delete()
+        layaRuntime.restart(enabled = false)
+        refreshLaya(keepMessage = false)
     }
 
     fun dismissTip() {
@@ -125,6 +183,10 @@ fun SettingsScreen(
     val settings by viewModel.settings.collectAsState()
     val overrides by viewModel.dangerOverrides.collectAsState()
     val demoTip by viewModel.demoTip.collectAsState()
+    val layaUi by viewModel.layaUi.collectAsState()
+    val layaPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments(),
+    ) { uris -> viewModel.importLayaModel(uris) }
     SettingsContent(
         demoTip = demoTip == true,
         onDismissTip = viewModel::dismissTip,
@@ -144,6 +206,14 @@ fun SettingsScreen(
         onResetSorting = viewModel::resetHandlerSorting,
         dangerOverrides = overrides,
         onRevokeOverride = viewModel::revokeOverride,
+        laya = layaUi,
+        layaEnabled = settings.layaVerdictEnabled,
+        onSetLayaEnabled = viewModel::setLayaEnabled,
+        onImportLayaModel = {
+            viewModel.refreshLaya()
+            layaPicker.launch(arrayOf("*/*"))
+        },
+        onDeleteLayaModel = viewModel::deleteLayaModel,
     )
 }
 
@@ -165,6 +235,11 @@ fun SettingsContent(
     onResetSorting: () -> Unit = {},
     dangerOverrides: List<com.dav3.linksentry.domain.model.DangerOverride> = emptyList(),
     onRevokeOverride: (com.dav3.linksentry.domain.model.DangerOverride) -> Unit = {},
+    laya: LayaSettingsUi = LayaSettingsUi(),
+    layaEnabled: Boolean = true,
+    onSetLayaEnabled: (Boolean) -> Unit = {},
+    onImportLayaModel: () -> Unit = {},
+    onDeleteLayaModel: () -> Unit = {},
 ) {
     Column(
         Modifier
@@ -373,6 +448,108 @@ fun SettingsContent(
                     }
                 }
             }
+        }
+
+        // ---- Optional on-device Laya verdict ----
+        LayaSection(
+            laya = laya,
+            layaEnabled = layaEnabled,
+            onSetLayaEnabled = onSetLayaEnabled,
+            onImportLayaModel = onImportLayaModel,
+            onDeleteLayaModel = onDeleteLayaModel,
+        )
+    }
+}
+
+/** Install shape of the optional Laya model bundle, for UI copy. */
+enum class LayaInstallUi { NOT_INSTALLED, INSTALLED, CORRUPT }
+
+/** State-driven UI model of the Laya section (previewable without a VM). */
+data class LayaSettingsUi(
+    val install: LayaInstallUi = LayaInstallUi.NOT_INSTALLED,
+    val totalBytes: Long = 0,
+    val mismatched: List<String> = emptyList(),
+    val busy: Boolean = false,
+    val message: String? = null,
+)
+
+/**
+ * "AI link verdict" section: import the optional on-device model, toggle
+ * verdicts, remove the bundle. The app itself never downloads — the user
+ * side-loads the files from a computer, and every file is hash-checked
+ * against the pinned release before it is accepted.
+ */
+@Composable
+private fun LayaSection(
+    laya: LayaSettingsUi,
+    layaEnabled: Boolean,
+    onSetLayaEnabled: (Boolean) -> Unit,
+    onImportLayaModel: () -> Unit,
+    onDeleteLayaModel: () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("AI link verdict (on-device)", style = MaterialTheme.typography.bodyLarge)
+        Text(
+            "Optional: a small decision model judges inspected links for phishing, scam, and malware patterns — " +
+                "entirely on this phone. LinkSentry never fetches or sends anything.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        when (laya.install) {
+            LayaInstallUi.INSTALLED -> {
+                Text(
+                    "Model installed (${laya.totalBytes / (1024L * 1024L)} MB).",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("Show AI verdicts", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                    Switch(checked = layaEnabled, onCheckedChange = onSetLayaEnabled)
+                }
+                TextButton(onClick = onDeleteLayaModel, enabled = !laya.busy) {
+                    Text("Remove model")
+                }
+            }
+            LayaInstallUi.CORRUPT -> {
+                Text(
+                    "The installed bundle does not match the pinned release (${laya.mismatched.joinToString()}). Re-import the files.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+                TextButton(onClick = onImportLayaModel, enabled = !laya.busy) {
+                    Text("Select model files")
+                }
+            }
+            LayaInstallUi.NOT_INSTALLED -> {
+                Text(
+                    "Not installed. The model (~615 MB) is not bundled — LinkSentry cannot download it. " +
+                        "On a computer, download all 6 files from " +
+                        "huggingface.co/litert-community/Laya-Multilingual-LiteRT (files match the names below), " +
+                        "move them to this phone, then select them here.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    "laya_ml_s256_embeds_wfp16.tflite · laya_ml_act_head_fp32.tflite · " +
+                        "laya_ml_calibration.json · tokenizer.json · token_embeddings_fp16.bin · token_embeddings.json",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.outline,
+                )
+                TextButton(onClick = onImportLayaModel, enabled = !laya.busy) {
+                    Text("Select model files")
+                }
+            }
+        }
+        laya.message?.let { message ->
+            Text(
+                message,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }

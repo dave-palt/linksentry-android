@@ -28,6 +28,7 @@ class SettingsRepositoryImpl @Inject constructor(
         val AUTO_CLOSE_ON_OPEN = booleanPreferencesKey("auto_close_on_open")
         val CUSTOM_TRACKING = stringPreferencesKey("custom_tracking_params")
         val HISTORY_EXCLUSIONS = stringPreferencesKey("history_exclusions")
+        val LAYA_VERDICT_ENABLED = booleanPreferencesKey("laya_verdict_enabled")
     }
 
     private val dataStore = context.appDataStore
@@ -52,6 +53,7 @@ class SettingsRepositoryImpl @Inject constructor(
             } ?: com.dav3.linksentry.domain.model.HandlerLayout.LIST,
             historyExclusions = (p[Keys.HISTORY_EXCLUSIONS] ?: "")
                 .split("\n").filter { it.isNotBlank() }.toSet(),
+            layaVerdictEnabled = p[Keys.LAYA_VERDICT_ENABLED] ?: true,
         )
     }
 
@@ -100,6 +102,10 @@ class SettingsRepositoryImpl @Inject constructor(
                 .split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
             p[Keys.CUSTOM_TRACKING] = (cur - n).sorted().joinToString(",")
         }
+    }
+
+    override suspend fun setLayaVerdictEnabled(enabled: Boolean) {
+        dataStore.edit { it[Keys.LAYA_VERDICT_ENABLED] = enabled }
     }
 
     override suspend fun excludeUrlFromHistory(url: String) {

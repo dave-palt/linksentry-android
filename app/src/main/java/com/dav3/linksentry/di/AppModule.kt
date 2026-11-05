@@ -47,4 +47,8 @@ abstract class AppModule {
     @Binds
     @Singleton
     abstract fun bindDemoRepository(impl: com.dav3.linksentry.data.local.DemoRepositoryImpl): com.dav3.linksentry.domain.repository.DemoRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindLayaRuntime(impl: com.dav3.linksentry.data.laya.LayaController): com.dav3.linksentry.domain.laya.LayaRuntime
 }

@@ -1,9 +1,34 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <!-- LinkSentry declares ZERO permissions. It never holds the INTERNET
          permission and contains no web view or HTTP client — it physically
          cannot fetch link content. Enforced in CI (dev-build.yml guardrails). -->
+
+    <!-- Library-declared permissions that LinkSentry never uses are removed
+         at manifest-merge time so the merged manifest stays free of platform
+         permission requests — checked in CI. LiteRT's AARs declare
+         FOREGROUND_SERVICE (inert in LinkSentry), and its optional Play
+         "AI delivery" dependency tree declares WAKE_LOCK /
+         ACCESS_NETWORK_STATE / RECEIVE_BOOT_COMPLETED for background model
+         downloads LinkSentry never performs (models are user-imported files;
+         the app has no INTERNET permission to fetch anything). -->
+    <uses-permission
+        android:name="android.permission.FOREGROUND_SERVICE"
+        tools:node="remove" />
+    <uses-permission
+        android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"
+        tools:node="remove" />
+    <uses-permission
+        android:name="android.permission.WAKE_LOCK"
+        tools:node="remove" />
+    <uses-permission
+        android:name="android.permission.ACCESS_NETWORK_STATE"
+        tools:node="remove" />
+    <uses-permission
+        android:name="android.permission.RECEIVE_BOOT_COMPLETED"
+        tools:node="remove" />
 
     <queries>
         <intent>
