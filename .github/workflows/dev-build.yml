@@ -28,16 +28,23 @@ jobs:
 
       - name: Zero requested permissions in source manifest
         run: |
-          # tools:node="remove" entries STRIP library-declared permissions at
-          # merge time (they keep LiteRT's inert FOREGROUND_SERVICE entries out
-          # of the merged manifest) — they request nothing and are allowed.
-          REQUESTED=$(grep '<uses-permission' app/src/main/AndroidManifest.xml | grep -v 'tools:node="remove"' || true)
-          if [ -n "$REQUESTED" ]; then
-            echo "::error::Permission requested in app/src/main/AndroidManifest.xml — LinkSentry must declare none:"
-            echo "$REQUESTED"
-            exit 1
-          fi
-          echo "OK: source manifest requests zero permissions."
+          # Element-level check (entries are multi-line). tools:node="remove"
+          # entries STRIP library-declared permissions at merge time — they
+          # request nothing and are allowed.
+          python3 - <<'PYEOF'
+          import re, sys
+          src = open("app/src/main/AndroidManifest.xml", encoding="utf-8").read()
+          requested = [
+              m.group(0) for m in re.finditer(r"<uses-permission\b[^>]*>", src, re.S)
+              if 'tools:node="remove"' not in m.group(0)
+          ]
+          if requested:
+              print("::error::Permission requested in app/src/main/AndroidManifest.xml — LinkSentry must declare none:")
+              for entry in requested:
+                  print(entry)
+              sys.exit(1)
+          print("OK: source manifest requests zero permissions.")
+          PYEOF
 
       - name: No INTERNET in merged manifest
         run: |
